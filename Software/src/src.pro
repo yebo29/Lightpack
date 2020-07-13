@@ -65,7 +65,7 @@ CONFIG(clang) {
 }
 
 unix:!macx{
-    CONFIG    += link_pkgconfig debug
+    CONFIG    += link_pkgconfig
     PKGCONFIG += libusb-1.0
 
     DESKTOP = $$(XDG_CURRENT_DESKTOP)
@@ -115,27 +115,40 @@ win32 {
     CONFIG(msvc) {
         QMAKE_POST_LINK = cd $(TargetDir) $$escape_expand(\r\n)\
             $$[QT_INSTALL_BINS]/windeployqt --no-angle --no-svg --no-translations --no-compiler-runtime \"$(TargetName)$(TargetExt)\" $$escape_expand(\r\n)\
-            copy /y \"$(VcInstallDir)redist\\$(PlatformTarget)\\Microsoft.VC$(PlatformToolsetVersion).CRT\\msvcp$(PlatformToolsetVersion).dll\" .\ $$escape_expand(\r\n)\
+            if $(PlatformToolsetVersion) LEQ 140 copy /y \"$(VcInstallDir)redist\\$(PlatformTarget)\\Microsoft.VC$(PlatformToolsetVersion).CRT\\msvcp$(PlatformToolsetVersion).dll\" .\ $$escape_expand(\r\n)\
+            if $(PlatformToolsetVersion) GTR 140 copy /y \"$(VcInstallDir)Redist\\MSVC\\$(VCToolsRedistVersion)\\$(PlatformTarget)\\Microsoft.VC$(PlatformToolsetVersion).CRT\\msvcp*.dll\" .\ $$escape_expand(\r\n)\
             if $(PlatformToolsetVersion) LSS 140 copy /y \"$(VcInstallDir)redist\\$(PlatformTarget)\\Microsoft.VC$(PlatformToolsetVersion).CRT\\msvcr$(PlatformToolsetVersion).dll\" .\ $$escape_expand(\r\n)\
-            if $(PlatformToolsetVersion) GEQ 140 copy /y \"$(VcInstallDir)redist\\$(PlatformTarget)\\Microsoft.VC$(PlatformToolsetVersion).CRT\\vcruntime$(PlatformToolsetVersion).dll\" .\ $$escape_expand(\r\n)\
-			copy /y \"$${OPENSSL_DIR}\\ssleay32.dll\" .\ $$escape_expand(\r\n)\
-			copy /y \"$${OPENSSL_DIR}\\libeay32.dll\" .\ $$escape_expand(\r\n)
+            if $(PlatformToolsetVersion) EQU 140 copy /y \"$(VcInstallDir)redist\\$(PlatformTarget)\\Microsoft.VC$(PlatformToolsetVersion).CRT\\vcruntime$(PlatformToolsetVersion).dll\" .\ $$escape_expand(\r\n)\
+            if $(PlatformToolsetVersion) GTR 140 copy /y \"$(VcInstallDir)Redist\\MSVC\\$(VCToolsRedistVersion)\\$(PlatformTarget)\\Microsoft.VC$(PlatformToolsetVersion).CRT\\vcruntime*.dll\" .\ $$escape_expand(\r\n)
+        !contains(DEFINES, NO_OPENSSL) {
+			# QT switched to OpenSSL 1.1 in 5.12.4, which has different binary names
+			versionAtLeast(QT_VERSION, "5.12.4") {
+				QMAKE_POST_LINK += copy /y \"$${OPENSSL_DIR}\\libcrypto-1_1-x64.dll\" .\ $$escape_expand(\r\n)\
+					copy /y \"$${OPENSSL_DIR}\\libssl-1_1-x64.dll\" .\ $$escape_expand(\r\n)\
+					IF EXIST  \"$${OPENSSL_DIR}\\msvcr*.dll\" copy /y \"$${OPENSSL_DIR}\\msvcr*.dll\" .\ $$escape_expand(\r\n)
 			} else {
-		warning("unsupported setup - update src.pro to copy dependencies")
+				QMAKE_POST_LINK += copy /y \"$${OPENSSL_DIR}\\ssleay32.dll\" .\ $$escape_expand(\r\n)\
+					copy /y \"$${OPENSSL_DIR}\\libeay32.dll\" .\ $$escape_expand(\r\n)\
+					IF EXIST  \"$${OPENSSL_DIR}\\msvcr*.dll\" copy /y \"$${OPENSSL_DIR}\\msvcr*.dll\" .\ $$escape_expand(\r\n)
+			}
+        }
+
+    } else {
+        warning("unsupported setup - update src.pro to copy dependencies")
     }
-	
+
 	contains(DEFINES,BASS_SOUND_SUPPORT) {
 		INCLUDEPATH += $${BASS_DIR}/c/ \
 			$${BASSWASAPI_DIR}/c/
-		
+
 		contains(QMAKE_TARGET.arch, x86_64) {
 			LIBS += -L$${BASS_DIR}/c/x64/ -L$${BASSWASAPI_DIR}/c/x64/
 		} else {
-			LIBS += -L$${BASS_DIR}/c/ -L$${BASSWASAPI_DIR}/c/		
+			LIBS += -L$${BASS_DIR}/c/ -L$${BASSWASAPI_DIR}/c/
 		}
-		
+
 		LIBS	+= -lbass -lbasswasapi
-		
+
 		contains(QMAKE_TARGET.arch, x86_64) {
 			QMAKE_POST_LINK += cd $(TargetDir) $$escape_expand(\r\n)\
 				copy /y \"$${BASS_DIR}\\x64\\bass.dll\" .\ $$escape_expand(\r\n)\
@@ -143,7 +156,17 @@ win32 {
 		} else {
 			QMAKE_POST_LINK += cd $(TargetDir) $$escape_expand(\r\n)\
 				copy /y \"$${BASS_DIR}\\bass.dll\" .\ $$escape_expand(\r\n)\
-				copy /y \"$${BASSWASAPI_DIR}\\basswasapi.dll\" .\	
+				copy /y \"$${BASSWASAPI_DIR}\\basswasapi.dll\" .\
+		}
+
+		DEFINES += SOUNDVIZ_SUPPORT
+	}
+
+	contains(DEFINES,NIGHTLIGHT_SUPPORT) {
+		contains(QMAKE_TARGET.arch, x86_64) {
+			Release:LIBS += -L$${NIGHTLIGHT_DIR}/Release/
+			Debug:LIBS += -L$${NIGHTLIGHT_DIR}/Debug/
+			LIBS += -lNightLightLibrary
 		}
 	}
 }
@@ -155,12 +178,40 @@ unix:!macx{
     LIBS +=-lXext -lX11
 
     QMAKE_CXXFLAGS += -std=c++11
+    contains(DEFINES,PULSEAUDIO_SUPPORT) {
+        INCLUDEPATH += $${PULSEAUDIO_INC_DIR} \
+            $${FFTW3_INC_DIR}
+
+        defined(PULSEAUDIO_LIB_DIR, var) {
+            LIBS += -L$${PULSEAUDIO_LIB_DIR}
+            QMAKE_POST_LINK += $(INSTALL_PROGRAM) \"$${PULSEAUDIO_LIB_DIR}/libpulse.so.0\" $(DESTDIR) $$escape_expand(\n\t)\
+				$(INSTALL_PROGRAM) \"$${PULSEAUDIO_LIB_DIR}/libpulsecommon-13.0.so\" $(DESTDIR) $$escape_expand(\n\t)
+        }
+
+        defined(PULSEAUDIO_LIB_DIR, var) {
+            LIBS += -L$${FFTW3_LIB_DIR}
+            QMAKE_POST_LINK += $(INSTALL_PROGRAM) \"$${FFTW3_LIB_DIR}/libfftw3f.so.3\" $(DESTDIR) $$escape_expand(\n)
+        }
+
+        LIBS += -lpulse -lfftw3f
+        DEFINES += SOUNDVIZ_SUPPORT
+	}
 }
 
 macx{
-    QMAKE_LFLAGS += -F/System/Library/Frameworks
+    QMAKE_LFLAGS += -F/System/Library/Frameworks -F"/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/PrivateFrameworks"
     # MacOS version using libusb and hidapi codes
-    SOURCES += hidapi/mac/hid.c
+    SOURCES += hidapi/mac/hid.c \
+    MacOSSession.mm
+
+    HEADERS += \
+    MacOSSession.h
+
+    contains(DEFINES,SOUNDVIZ_SUPPORT) {
+        SOURCES += MacOSSoundManager.mm
+        HEADERS += MacOSSoundManager.h
+    }
+
     LIBS += \
             -framework Cocoa \
             -framework Carbon \
@@ -171,6 +222,13 @@ macx{
             -framework ApplicationServices \
             -framework OpenGL \
             -framework IOKit \
+            # private framework
+            -weak_framework CoreBrightness \
+            -framework AppKit \
+            -framework Accelerate \
+            -framework CoreMedia \
+            -framework AVFoundation \
+            -framework CoreVideo \
 
     ICON = ../res/icons/Prismatik.icns
 
@@ -213,10 +271,15 @@ SOURCES += \
     LedDeviceAdalight.cpp \
     LedDeviceArdulight.cpp \
     LedDeviceVirtual.cpp \
+    AbstractLedDeviceUdp.cpp \
+    LedDeviceDrgb.cpp \
+    LedDeviceDnrgb.cpp \
+    LedDeviceWarls.cpp \
     ColorButton.cpp \
     ApiServer.cpp \
     ApiServerSetColorTask.cpp \
     MoodLampManager.cpp \
+    MoodLamp.cpp \
 	LiquidColorGenerator.cpp \
     LedDeviceManager.cpp \
     SelectWidget.cpp \
@@ -226,7 +289,7 @@ SOURCES += \
     Plugin.cpp \
     LightpackPluginInterface.cpp \
     TimeEvaluations.cpp \
-    SessionChangeDetector.cpp \
+    SystemSession.cpp \
     wizard/ZonePlacementPage.cpp \
     wizard/Wizard.cpp \
     wizard/WizardPageUsingDevice.cpp \
@@ -235,6 +298,8 @@ SOURCES += \
     wizard/MonitorConfigurationPage.cpp \
     wizard/LightpackDiscoveryPage.cpp \
     wizard/ConfigureDevicePage.cpp \
+    wizard/ConfigureUdpDevicePage.cpp \
+    wizard/ConfigureDevicePowerPage.cpp \
     wizard/SelectDevicePage.cpp \
     wizard/GlobalColorCoefPage.cpp \
     wizard/CustomDistributor.cpp \
@@ -259,6 +324,10 @@ HEADERS += \
     LedDeviceLightpack.hpp \
     LedDeviceAdalight.hpp \
     LedDeviceArdulight.hpp \
+    AbstractLedDeviceUdp.hpp \
+    LedDeviceDrgb.hpp \
+    LedDeviceDnrgb.hpp \
+    LedDeviceWarls.hpp \
     LedDeviceVirtual.hpp \
     ColorButton.hpp \
     ../common/defs.h \
@@ -267,6 +336,7 @@ HEADERS += \
     ../../CommonHeaders/COMMANDS.h \
     ../../CommonHeaders/USB_ID.h \
     MoodLampManager.hpp \
+    MoodLamp.hpp \
 	LiquidColorGenerator.hpp \
     LedDeviceManager.hpp \
     SelectWidget.hpp \
@@ -275,7 +345,7 @@ HEADERS += \
     PluginsManager.hpp \
     Plugin.hpp \
     LightpackPluginInterface.hpp \
-    SessionChangeDetector.hpp \
+    SystemSession.hpp \
     wizard/ZonePlacementPage.hpp \
     wizard/Wizard.hpp \
     wizard/WizardPageUsingDevice.hpp \
@@ -285,6 +355,8 @@ HEADERS += \
     wizard/MonitorConfigurationPage.hpp \
     wizard/LightpackDiscoveryPage.hpp \
     wizard/ConfigureDevicePage.hpp \
+    wizard/ConfigureUdpDevicePage.hpp \
+    wizard/ConfigureDevicePowerPage.hpp \
     wizard/SelectDevicePage.hpp \
     wizard/GlobalColorCoefPage.hpp \
     types.h \
@@ -294,14 +366,29 @@ HEADERS += \
     UpdatesProcessor.hpp \
     LightpackCommandLineParser.hpp
 
-contains(DEFINES,BASS_SOUND_SUPPORT) {
-    SOURCES += SoundManager.cpp
-    HEADERS += SoundManager.hpp
+contains(DEFINES,SOUNDVIZ_SUPPORT) {
+    SOURCES += SoundManagerBase.cpp SoundVisualizer.cpp
+    HEADERS += SoundManagerBase.hpp SoundVisualizer.hpp
 }
 
 win32 {
-    SOURCES += LedDeviceAlienFx.cpp
-    HEADERS += LedDeviceAlienFx.hpp
+    SOURCES += LedDeviceAlienFx.cpp \
+    WindowsSession.cpp
+
+    HEADERS += LedDeviceAlienFx.hpp \
+    WindowsSession.hpp
+
+    contains(DEFINES,SOUNDVIZ_SUPPORT) {
+        SOURCES += WindowsSoundManager.cpp
+        HEADERS += WindowsSoundManager.hpp
+    }
+}
+
+unix:!macx {
+    contains(DEFINES,SOUNDVIZ_SUPPORT) {
+        SOURCES += PulseAudioSoundManager.cpp
+        HEADERS += PulseAudioSoundManager.hpp
+    }
 }
 
 FORMS += SettingsWindow.ui \
@@ -314,6 +401,8 @@ FORMS += SettingsWindow.ui \
     wizard/MonitorConfigurationPage.ui \
     wizard/LightpackDiscoveryPage.ui \
     wizard/ConfigureDevicePage.ui \
+    wizard/ConfigureUdpDevicePage.ui \
+    wizard/ConfigureDevicePowerPage.ui \
     wizard/SelectDevicePage.ui \
     wizard/GlobalColorCoefPage.ui
 

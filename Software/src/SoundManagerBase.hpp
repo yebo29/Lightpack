@@ -1,5 +1,5 @@
 /*
- * MoodLampManager.hpp
+ * SoundManagerBase.hpp
  *
  *	Created on: 11.12.2011
  *		Project: Lightpack
@@ -27,9 +27,8 @@
 
 #include <QObject>
 #include <QColor>
-#include <QTimer>
-#include "LiquidColorGenerator.hpp"
-
+#include <QElapsedTimer>
+#include "SoundVisualizer.hpp"
 
 struct SoundManagerDeviceInfo {
 	SoundManagerDeviceInfo(){ this->name = ""; this->id = -1; }
@@ -39,59 +38,62 @@ struct SoundManagerDeviceInfo {
 };
 Q_DECLARE_METATYPE(SoundManagerDeviceInfo);
 
-class SoundManager : public QObject
+class SoundManagerBase : public QObject
 {
 	Q_OBJECT
 
 public:
-	explicit SoundManager(int hWnd, QObject *parent = 0);
-	~SoundManager();
+	SoundManagerBase(QObject *parent = 0);
+	virtual ~SoundManagerBase();
+	static SoundManagerBase* create(int hWnd = 0, QObject* parent = 0);
 
 signals:
 	void updateLedsColors(const QList<QRgb> & colors);
 	void deviceList(const QList<SoundManagerDeviceInfo> & devices, int recommended);
+	void visualizerList(const QList<SoundManagerVisualizerInfo>& visualizers, int recommended);
+	void visualizerFrametime(const double);
 
 public:
-	void start(bool isMoodLampEnabled);
+	virtual void start(bool isEnabled) { Q_UNUSED(isEnabled); Q_ASSERT(("Not implemented", false)); };
 
 	// Common options
-	void setSendDataOnlyIfColorsChanged(bool state);
 	void reset();
+	virtual size_t fftSize() const;
+	float* fft() const;
 
 public slots:
 	void initFromSettings();
 	void settingsProfileChanged(const QString &profileName);
 	void setNumberOfLeds(int value);
 	void setDevice(int value);
+	void setVisualizer(int value);
 	void setMinColor(QColor color);
 	void setMaxColor(QColor color);
 	void setLiquidMode(bool isEnabled);
 	void setLiquidModeSpeed(int value);
 	void requestDeviceList();
-
-private slots:
+	void requestVisualizerList();
 	void updateColors();
+	void setSendDataOnlyIfColorsChanged(bool state);
 
-private:
-	bool init();
+protected:
+	virtual bool init() = 0;
 	void initColors(int numberOfLeds);
+	virtual void populateDeviceList(QList<SoundManagerDeviceInfo>& devices, int& recommended) = 0;
+	virtual void updateFft() {};
 
-private:
-	LiquidColorGenerator m_generator;
+protected:
+	SoundVisualizerBase* m_visualizer{nullptr};
 
 	QList<QRgb> m_colors;
-	QList<int> m_peaks;
-	int m_frames;
 
-	QTimer m_timer;
-	int m_hWnd;
-
-
-	bool	m_isEnabled;
-	bool	m_isInited;
-	bool	m_isLiquidMode;
-	QColor m_minColor;
-	QColor m_maxColor;
-	int	m_device;
-	bool	m_isSendDataOnlyIfColorsChanged;
+	bool	m_isEnabled{false};
+	bool	m_isInited{false};
+	int		m_device{-1};
+	bool	m_isSendDataOnlyIfColorsChanged{false};
+	
+	float*	m_fft{nullptr};
+	
+	QElapsedTimer m_elapsedTimer;
+	size_t m_frames{ 1 };
 };

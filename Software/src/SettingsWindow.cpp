@@ -44,6 +44,7 @@
 #include <QStringBuilder>
 #include <QScrollBar>
 #include <QMessageBox>
+#include "PrismatikMath.hpp"
 
 
 using namespace SettingsScope;
@@ -51,14 +52,20 @@ using namespace SettingsScope;
 // ----------------------------------------------------------------------------
 // Lightpack settings window
 // ----------------------------------------------------------------------------
-
+namespace {
+#ifdef Q_OS_WIN
+const QString BaudrateWarningSign = " <b>!!!</b>";
+#else
+const QString BaudrateWarningSign = " ⚠️";
+#endif
+}
 const QString SettingsWindow::DeviceFirmvareVersionUndef = "undef";
 const QString SettingsWindow::LightpackDownloadsPageUrl = "http://code.google.com/p/lightpack/downloads/list";
 
 // Indexes of supported modes listed in ui->comboBox_Modes and ui->stackedWidget_Modes
 const int SettingsWindow::GrabModeIndex = 0;
 const int SettingsWindow::MoodLampModeIndex = 1;
-#ifdef BASS_SOUND_SUPPORT
+#ifdef SOUNDVIZ_SUPPORT
 const int SettingsWindow::SoundVisualizeModeIndex = 2;
 #endif
 
@@ -121,14 +128,20 @@ SettingsWindow::SettingsWindow(QWidget *parent) :
 
 	updateStatusBar();
 
+#ifdef SOUNDVIZ_SUPPORT
+
 #ifdef BASS_SOUND_SUPPORT
 	ui->label_licenseAndCredits->setText(ui->label_licenseAndCredits->text() + tr(" The sound visualizer uses the <a href=\"http://un4seen.com/\"><span style=\" text-decoration: underline; color:#0000ff;\">BASS</span></a> library."));
+#endif // BASS_SOUND_SUPPORT
+
+	if (Settings::getConnectedDevice() != SupportedDevices::DeviceType::DeviceTypeLightpack)
+		ui->label_SoundvizLightpackSmoothnessNote->hide();
 #else
 	ui->comboBox_LightpackModes->removeItem(2);
 #endif
 
-#ifndef Q_OS_WIN
-	ui->checkBox_GrabApplyGammaRamp->setVisible(false);
+#if !defined(Q_OS_WIN) && !defined(Q_OS_MACOS)
+	ui->checkBox_GrabApplyBlueLightReduction->setVisible(false);
 	ui->checkBox_installUpdates->setVisible(false);
 #endif
 
@@ -176,7 +189,7 @@ SettingsWindow::~SettingsWindow()
 	if (m_trayIcon)
 		delete m_trayIcon;
 
-	delete ui;
+	//delete ui;
 }
 
 void SettingsWindow::connectSignalsSlots()
@@ -188,7 +201,6 @@ void SettingsWindow::connectSignalsSlots()
 //		connect(m_trayIcon, SIGNAL(activated(QSystemTrayIcon::ActivationReason)), this, SLOT(onTrayIcon_Activated(QSystemTrayIcon::ActivationReason)));
 //		connect(m_trayIcon, SIGNAL(messageClicked()), this, SLOT(onTrayIcon_MessageClicked()));
 //	}
-	DEBUG_MID_LEVEL << Q_FUNC_INFO << "tr";
 
 	connect(ui->listWidget, SIGNAL(currentRowChanged(int)), this, SLOT(changePage(int)));
 	connect(ui->spinBox_GrabSlowdown, SIGNAL(valueChanged(int)), this, SLOT(onGrabSlowdown_valueChanged(int)));
@@ -197,7 +209,11 @@ void SettingsWindow::connectSignalsSlots()
 	connect(ui->radioButton_LuminosityDeadZone, SIGNAL(toggled(bool)), this, SLOT(onMinimumLumosity_toggled(bool)));
 	connect(ui->checkBox_GrabIsAvgColors, SIGNAL(toggled(bool)), this, SLOT(onGrabIsAvgColors_toggled(bool)));
 	connect(ui->spinBox_GrabOverBrighten, SIGNAL(valueChanged(int)), this, SLOT(onGrabOverBrighten_valueChanged(int)));
-	connect(ui->checkBox_GrabApplyGammaRamp, SIGNAL(toggled(bool)), this, SLOT(onGrabApplyGammaRamp_toggled(bool)));
+	connect(ui->checkBox_GrabApplyBlueLightReduction, SIGNAL(toggled(bool)), this, SLOT(onGrabApplyBlueLightReduction_toggled(bool)));
+	connect(ui->checkBox_GrabApplyColorTemperature, SIGNAL(toggled(bool)), this, SLOT(onGrabApplyColorTemperature_toggled(bool)));
+	connect(ui->horizontalSlider_GrabColorTemperature, SIGNAL(valueChanged(int)), this, SLOT(onGrabColorTemperature_valueChanged(int)));
+	connect(ui->horizontalSlider_GrabGamma, SIGNAL(valueChanged(int)), this, SLOT(onSliderGrabGamma_valueChanged(int)));
+	connect(ui->doubleSpinBox_GrabGamma, SIGNAL(valueChanged(double)), this, SLOT(onGrabGamma_valueChanged(double)));
 
 	connect(ui->radioButton_GrabWidgetsDontShow, SIGNAL(toggled(bool)), this, SLOT( onDontShowLedWidgets_Toggled(bool)));
 	connect(ui->radioButton_Colored, SIGNAL(toggled(bool)), this, SLOT(onSetColoredLedWidgets(bool)));
@@ -205,6 +221,7 @@ void SettingsWindow::connectSignalsSlots()
 
 	connect(ui->radioButton_LiquidColorMoodLampMode, SIGNAL(toggled(bool)), this, SLOT(onMoodLampLiquidMode_Toggled(bool)));
 	connect(ui->horizontalSlider_MoodLampSpeed, SIGNAL(valueChanged(int)), this, SLOT(onMoodLampSpeed_valueChanged(int)));
+	connect(ui->comboBox_MoodLampLamp, SIGNAL(currentIndexChanged(int)), this, SLOT(onMoodLampLamp_currentIndexChanged(int)));
 
 	// Main options
 	connect(ui->comboBox_LightpackModes, SIGNAL(currentIndexChanged(int)), this, SLOT(onLightpackModes_currentIndexChanged(int)));
@@ -216,6 +233,7 @@ void SettingsWindow::connectSignalsSlots()
 	connect(ui->checkBox_DisableUsbPowerLed, SIGNAL(toggled(bool)), this, SLOT(onDisableUsbPowerLed_toggled(bool)));
 	connect(ui->spinBox_DeviceSmooth, SIGNAL(valueChanged(int)), this, SLOT(onDeviceSmooth_valueChanged(int)));
 	connect(ui->spinBox_DeviceBrightness, SIGNAL(valueChanged(int)), this, SLOT(onDeviceBrightness_valueChanged(int)));
+	connect(ui->spinBox_DeviceBrightnessCap, SIGNAL(valueChanged(int)), this, SLOT(onDeviceBrightnessCap_valueChanged(int)));
 	connect(ui->spinBox_DeviceColorDepth, SIGNAL(valueChanged(int)), this, SLOT(onDeviceColorDepth_valueChanged(int)));
 	connect(ui->doubleSpinBox_DeviceGamma, SIGNAL(valueChanged(double)), this, SLOT(onDeviceGammaCorrection_valueChanged(double)));
 	connect(ui->horizontalSlider_GammaCorrection, SIGNAL(valueChanged(int)), this, SLOT(onSliderDeviceGammaCorrection_valueChanged(int)));
@@ -238,17 +256,25 @@ void SettingsWindow::connectSignalsSlots()
 	connect(ui->pushButton_DeleteProfile, SIGNAL(clicked()), this, SLOT(profileDeleteCurrent()));
 
 	connect(ui->pushButton_SelectColorMoodLamp, SIGNAL(colorChanged(QColor)), this, SLOT(onMoodLampColor_changed(QColor)));
-#ifdef BASS_SOUND_SUPPORT
+#ifdef SOUNDVIZ_SUPPORT
 	connect(ui->comboBox_SoundVizDevice, SIGNAL(currentIndexChanged(int)), this, SLOT(onSoundVizDevice_currentIndexChanged(int)));
+	connect(ui->comboBox_SoundVizVisualizer, SIGNAL(currentIndexChanged(int)), this, SLOT(onSoundVizVisualizer_currentIndexChanged(int)));
 	connect(ui->pushButton_SelectColorSoundVizMin, SIGNAL(colorChanged(QColor)), this, SLOT(onSoundVizMinColor_changed(QColor)));
 	connect(ui->pushButton_SelectColorSoundVizMax, SIGNAL(colorChanged(QColor)), this, SLOT(onSoundVizMaxColor_changed(QColor)));
 	connect(ui->radioButton_SoundVizLiquidMode, SIGNAL(toggled(bool)), this, SLOT(onSoundVizLiquidMode_Toggled(bool)));
 	connect(ui->horizontalSlider_SoundVizLiquidSpeed, SIGNAL(valueChanged(int)), this, SLOT(onSoundVizLiquidSpeed_valueChanged(int)));
-#endif
+#ifdef Q_OS_MACOS
+	connect(ui->pushButton_SoundVizDeviceHelp, SIGNAL(clicked()), this, SLOT(on_pushButton_SoundVizDeviceHelp_clicked()));
+#else
+	ui->pushButton_SoundVizDeviceHelp->hide();
+#endif // Q_OS_MACOS
+
+#endif// SOUNDVIZ_SUPPORT
 	connect(ui->checkBox_ExpertModeEnabled, SIGNAL(toggled(bool)), this, SLOT(onExpertModeEnabled_Toggled(bool)));
 	connect(ui->checkBox_KeepLightsOnAfterExit, SIGNAL(toggled(bool)), this, SLOT(onKeepLightsAfterExit_Toggled(bool)));
 	connect(ui->checkBox_KeepLightsOnAfterLockComputer, SIGNAL(toggled(bool)), this, SLOT(onKeepLightsAfterLock_Toggled(bool)));
 	connect(ui->checkBox_KeepLightsOnAfterSuspend, SIGNAL(toggled(bool)), this, SLOT(onKeepLightsAfterSuspend_Toggled(bool)));
+	connect(ui->checkBox_KeepLightsOnAfterScreenOff, SIGNAL(toggled(bool)), this, SLOT(onKeepLightsAfterScreenOff_Toggled(bool)));
 
 	// Dev tab
 #ifdef WINAPI_GRAB_SUPPORT
@@ -259,6 +285,9 @@ void SettingsWindow::connectSignalsSlots()
 #endif
 #ifdef X11_GRAB_SUPPORT
 	connect(ui->radioButton_GrabX11, SIGNAL(toggled(bool)), this, SLOT(onGrabberChanged()));
+#endif
+#ifdef MAC_OS_AV_GRAB_SUPPORT
+	connect(ui->radioButton_GrabMacAVFoundation, SIGNAL(toggled(bool)), this, SLOT(onGrabberChanged()));
 #endif
 #ifdef MAC_OS_CG_GRAB_SUPPORT
 	connect(ui->radioButton_GrabMacCoreGraphics, SIGNAL(toggled(bool)), this, SLOT(onGrabberChanged()));
@@ -290,6 +319,7 @@ void SettingsWindow::connectSignalsSlots()
 	connect(&m_smoothScrollTimer, SIGNAL(timeout()), this, SLOT(scrollThanks()));
 	connect(ui->checkBox_checkForUpdates, SIGNAL(toggled(bool)), this, SLOT(onCheckBox_checkForUpdates_Toggled(bool)));
 	connect(ui->checkBox_installUpdates, SIGNAL(toggled(bool)), this, SLOT(onCheckBox_installUpdates_Toggled(bool)));
+	connect(&m_baudrateWarningClearTimer, SIGNAL(timeout()), this, SLOT(clearBaudrateWarning()));
 }
 
 // ----------------------------------------------------------------------------
@@ -367,12 +397,8 @@ void SettingsWindow::onExpertModeEnabled_Toggled(bool isEnabled)
 }
 
 void SettingsWindow::updateExpertModeWidgetsVisibility()
-{	
-	if(Settings::isExpertModeEnabled()) {
-		ui->listWidget->setItemHidden(ui->listWidget->item(4),false);
-	} else {
-		ui->listWidget->setItemHidden(ui->listWidget->item(4),true);
-	}
+{
+	ui->listWidget->item(4)->setHidden(!Settings::isExpertModeEnabled());
 
 	updateDeviceTabWidgetsVisibility();
 }
@@ -439,6 +465,7 @@ void SettingsWindow::setDeviceTabWidgetsVisibility(DeviceTab::Options options)
 void SettingsWindow::syncLedDeviceWithSettingsWindow()
 {
 	emit updateBrightness(Settings::getDeviceBrightness());
+	emit updateBrightnessCap(Settings::getDeviceBrightnessCap());
 	emit updateGamma(Settings::getDeviceGamma());
 }
 
@@ -471,8 +498,10 @@ int SettingsWindow::getLigtpackFirmwareVersionMajor()
 void SettingsWindow::onPostInit() {
 	updateUiFromSettings();
 	this->requestFirmwareVersion();
-#ifdef BASS_SOUND_SUPPORT
+	this->requestMoodLampLamps();
+#ifdef SOUNDVIZ_SUPPORT
 	this->requestSoundVizDevices();
+	this->requestSoundVizVisualizers();
 #endif
 
 	if (m_trayIcon) {
@@ -481,11 +510,14 @@ void SettingsWindow::onPostInit() {
 			if (Settings::getAutoUpdatingVersion() != VERSION_STR) {
 				m_trayIcon->showMessage(tr("Prismatik was updated"), tr("Successfully updated to version %1.").arg(VERSION_STR));
 			} else {
-				m_trayIcon->showMessage(
-					tr("Prismatik update failed"), 
-					tr("There was a problem installing the update. You are still on version %1.").arg(VERSION_STR),
-					QSystemTrayIcon::Critical);
+				QMessageBox::critical(
+					this,
+					tr("Prismatik automatic update failed"),
+					tr("There was a problem when trying to automatically update Prismatik to the latest version.\n")
+					+ tr("You are still on version %1.\n").arg(VERSION_STR)
+					+ tr("Installing updates automatically was disabled."));
 				updateJustFailed = true;
+				ui->checkBox_installUpdates->setChecked(false);
 			}
 			Settings::setAutoUpdatingVersion("");
 		}
@@ -798,6 +830,11 @@ void SettingsWindow::initGrabbersRadioButtonsVisibility()
 #else
 	ui->radioButton_GrabX11->setChecked(true);
 #endif
+#ifndef MAC_OS_AV_GRAB_SUPPORT
+	ui->radioButton_GrabMacAVFoundation->setVisible(false);
+#else
+	ui->radioButton_GrabMacAVFoundation->setChecked(true);
+#endif
 #ifndef MAC_OS_CG_GRAB_SUPPORT
 	ui->radioButton_GrabMacCoreGraphics->setVisible(false);
 #else
@@ -866,6 +903,7 @@ void SettingsWindow::updateVirtualLedsColors(const QList<QRgb> & colors)
 
 		QPalette pal = label->palette();
 		pal.setBrush(QPalette::Window, QBrush(color));
+		pal.setColor(label->foregroundRole(), PrismatikMath::getBrightness(colors[i]) > 150 ? Qt::black : Qt::white);
 		label->setPalette(pal);
 	}
 }
@@ -906,13 +944,15 @@ void SettingsWindow::processMessage(const QString &message)
 	} else if (message == "quitForWizard") {
 		qWarning() << "Wizard was started, quitting!";
 		LightpackApplication::quit();
-	} else if (m_trayIcon != NULL) {
+	} else if (m_trayIcon != NULL) { // "alreadyRunning"
 		qWarning(qPrintable(message));
 		m_trayIcon->showMessage(SysTrayIcon::MessageAnotherInstance);
+		this->show();
+		this->activateWindow();
 	}
 }
 
-#ifdef BASS_SOUND_SUPPORT
+#ifdef SOUNDVIZ_SUPPORT
 void SettingsWindow::updateAvailableSoundVizDevices(const QList<SoundManagerDeviceInfo> & devices, int recommended)
 {
 	ui->comboBox_SoundVizDevice->blockSignals(true);
@@ -929,7 +969,41 @@ void SettingsWindow::updateAvailableSoundVizDevices(const QList<SoundManagerDevi
 	ui->comboBox_SoundVizDevice->setCurrentIndex(selectIndex);
 	ui->comboBox_SoundVizDevice->blockSignals(false);
 }
+
+void SettingsWindow::updateAvailableSoundVizVisualizers(const QList<SoundManagerVisualizerInfo> & visualizers, int recommended)
+{
+	ui->comboBox_SoundVizVisualizer->blockSignals(true);
+	ui->comboBox_SoundVizVisualizer->clear();
+	int selectedVisualizer = Settings::getSoundVisualizerVisualizer();
+	if (selectedVisualizer == -1) selectedVisualizer = recommended;
+	int selectIndex = -1;
+	for (int i = 0; i < visualizers.size(); i++) {
+		ui->comboBox_SoundVizVisualizer->addItem(visualizers[i].name, visualizers[i].id);
+		if (visualizers[i].id == selectedVisualizer) {
+			selectIndex = i;
+		}
+	}
+	ui->comboBox_SoundVizVisualizer->setCurrentIndex(selectIndex);
+	ui->comboBox_SoundVizVisualizer->blockSignals(false);
+}
 #endif
+
+void SettingsWindow::updateAvailableMoodLampLamps(const QList<MoodLampLampInfo> & lamps, int recommended)
+{
+	ui->comboBox_MoodLampLamp->blockSignals(true);
+	ui->comboBox_MoodLampLamp->clear();
+	int selectedLamp = Settings::getMoodLampLamp();
+	if (selectedLamp == -1) selectedLamp = recommended;
+	int selectIndex = -1;
+	for (int i = 0; i < lamps.size(); i++) {
+		ui->comboBox_MoodLampLamp->addItem(lamps[i].name, lamps[i].id);
+		if (lamps[i].id == selectedLamp) {
+			selectIndex = i;
+		}
+	}
+	ui->comboBox_MoodLampLamp->setCurrentIndex(selectIndex);
+	ui->comboBox_MoodLampLamp->blockSignals(false);
+}
 
 // ----------------------------------------------------------------------------
 // Show / Hide settings and about windows
@@ -1004,7 +1078,7 @@ void SettingsWindow::ledDeviceOpenSuccess(bool isSuccess)
 }
 
 void SettingsWindow::ledDeviceCallSuccess(bool isSuccess)
-{	
+{
 	DEBUG_HIGH_LEVEL << Q_FUNC_INFO << isSuccess << m_backlightStatus << sender();
 
 	// If Backlight::StatusOff then nothings changed
@@ -1063,19 +1137,70 @@ void SettingsWindow::ledDeviceFirmwareVersionUnofficialResult(const int version)
 }
 
 void SettingsWindow::refreshAmbilightEvaluated(double updateResultMs)
-{	
+{
 	DEBUG_HIGH_LEVEL << Q_FUNC_INFO << updateResultMs;
 
-	double secs = updateResultMs / 1000;
 	double hz = 0;
 
-	if(secs != 0){
-		hz = 1 / secs;
+	if (updateResultMs != 0)
+		hz = 1000.0 / updateResultMs; /* ms to hz */
+
+	QString fpsText = QString::number(hz, 'f', 0);
+	if (ui->comboBox_LightpackModes->currentIndex() == GrabModeIndex) {
+		const double maxHz = 1000.0 / ui->spinBox_GrabSlowdown->value(); // cap with display refresh rate?
+		fpsText += " / " + QString::number(maxHz, 'f', 0);
+	}
+	ui->label_GrabFrequency_value->setText(fpsText);
+
+	const SupportedDevices::DeviceType device = Settings::getConnectedDevice();
+
+	if (device == SupportedDevices::DeviceTypeArdulight || device == SupportedDevices::DeviceTypeAdalight) {
+		const double ledCount = static_cast<double>(Settings::getNumberOfLeds(device));
+		const double baudRate = static_cast<double>(device == SupportedDevices::DeviceTypeAdalight ? Settings::getAdalightSerialPortBaudRate() : Settings::getArdulightSerialPortBaudRate());
+		m_maxFPS = std::max(hz, m_maxFPS);
+		const double theoreticalMaxHz = PrismatikMath::theoreticalMaxFrameRate(ledCount, baudRate);
+
+		DEBUG_HIGH_LEVEL << Q_FUNC_INFO << "Therotical Max Hz for led count and baud rate:" << theoreticalMaxHz << ledCount << baudRate;
+		if (theoreticalMaxHz <= hz)
+			qWarning() << Q_FUNC_INFO << hz << "FPS went over theoretical max of" << theoreticalMaxHz;
+
+		const QPalette& defaultPalette = ui->label_GrabFrequency_txt_fps->palette();
+
+		QPalette palette = ui->label_GrabFrequency_value->palette();
+		if (theoreticalMaxHz <= m_maxFPS) {
+			palette.setColor(QPalette::WindowText, Qt::red);
+			fpsText += BaudrateWarningSign;
+
+			QString toolTipMsg = tr(
+"<html><body><p>Your frame rate reached <b>%1 FPS</b>, your baud rate of <b>%2</b> might be too low for the amount of LEDs (%3).</p>\
+<p>You might experience lag or visual artifacts with your LEDs.</p>\
+<p>Lower your target framerate to <b>under %4 FPS</b> or increase your baud rate to <b>above %5</b>.</p></body></html>")
+			.arg(m_maxFPS, 0, 'f', 0).arg(baudRate).arg(ledCount)
+			.arg(PrismatikMath::theoreticalMaxFrameRate(ledCount, baudRate), 0, 'f', 0)
+			.arg(std::round(PrismatikMath::theoreticalMinBaudRate(ledCount, m_maxFPS) / 100.0) * 100.0, 0, 'f', 0);
+			this->labelFPS->setToolTip(toolTipMsg);
+			m_baudrateWarningClearTimer.start(15000);
+		} else
+			palette.setColor(QPalette::WindowText, defaultPalette.color(QPalette::WindowText));
+
+		ui->label_GrabFrequency_value->setPalette(palette);
+		this->labelFPS->setPalette(palette);
 	}
 
-	ui->label_GrabFrequency_value->setText(QString::number(hz,'f', 2) /* ms to hz */);
+	this->labelFPS->setText(tr("FPS: ") + fpsText);
+}
 
-	this->labelFPS->setText(tr("FPS: ")+QString::number(hz,'f', 2) );
+void SettingsWindow::clearBaudrateWarning()
+{
+	const QPalette& defaultPalette = ui->label_GrabFrequency_txt_fps->palette();
+	QPalette palette = ui->label_GrabFrequency_value->palette();
+	palette.setColor(QPalette::WindowText, defaultPalette.color(QPalette::WindowText));
+
+	ui->label_GrabFrequency_value->setPalette(palette);
+	this->labelFPS->setPalette(palette);
+	this->labelFPS->setToolTip("");
+
+	this->labelFPS->setText(this->labelFPS->text().remove(BaudrateWarningSign));
 }
 
 // ----------------------------------------------------------------------------
@@ -1118,6 +1243,7 @@ void SettingsWindow::onGrabSlowdown_valueChanged(int value)
 	DEBUG_LOW_LEVEL << Q_FUNC_INFO << value;
 
 	Settings::setGrabSlowdown(value);
+	refreshAmbilightEvaluated(0);// update max grab rate
 }
 
 void SettingsWindow::onGrabIsAvgColors_toggled(bool state)
@@ -1134,13 +1260,51 @@ void SettingsWindow::onGrabOverBrighten_valueChanged(int value)
 	Settings::setGrabOverBrighten(value);
 }
 
-void SettingsWindow::onGrabApplyGammaRamp_toggled(bool state)
+void SettingsWindow::onGrabApplyBlueLightReduction_toggled(bool state)
 {
 	DEBUG_LOW_LEVEL << Q_FUNC_INFO << state;
 
-	Settings::setGrabApplyGammaRampEnabled(state);
+	Settings::setGrabApplyBlueLightReductionEnabled(state);
+	if (state == true && ui->checkBox_GrabApplyColorTemperature->isChecked())
+	{
+		ui->checkBox_GrabApplyColorTemperature->setChecked(false);
+		Settings::setGrabApplyColorTemperatureEnabled(false);
+	}
 }
 
+void SettingsWindow::onGrabApplyColorTemperature_toggled(bool state)
+{
+	DEBUG_LOW_LEVEL << Q_FUNC_INFO << state;
+
+	Settings::setGrabApplyColorTemperatureEnabled(state);
+	if (state == true && ui->checkBox_GrabApplyBlueLightReduction->isChecked())
+	{
+		ui->checkBox_GrabApplyBlueLightReduction->setChecked(false);
+		Settings::setGrabApplyBlueLightReductionEnabled(false);
+	}
+}
+
+void SettingsWindow::onGrabColorTemperature_valueChanged(int value)
+{
+	DEBUG_LOW_LEVEL << Q_FUNC_INFO << value;
+
+	Settings::setGrabColorTemperature(value);
+}
+
+void SettingsWindow::onGrabGamma_valueChanged(double value)
+{
+	DEBUG_LOW_LEVEL << Q_FUNC_INFO << value;
+
+	Settings::setGrabGamma(value);
+	ui->horizontalSlider_GrabGamma->setValue(floor((value * 100)));
+}
+
+void SettingsWindow::onSliderGrabGamma_valueChanged(int value)
+{
+	DEBUG_LOW_LEVEL << Q_FUNC_INFO << value;
+	Settings::setGrabGamma(value / 100.0);
+	ui->doubleSpinBox_GrabGamma->setValue(value / 100.0);
+}
 
 void SettingsWindow::onLuminosityThreshold_valueChanged(int value)
 {
@@ -1183,6 +1347,13 @@ void SettingsWindow::onDeviceBrightness_valueChanged(int percent)
 	Settings::setDeviceBrightness(percent);
 }
 
+void SettingsWindow::onDeviceBrightnessCap_valueChanged(int percent)
+{
+	DEBUG_LOW_LEVEL << Q_FUNC_INFO << percent;
+
+	Settings::setDeviceBrightnessCap(percent);
+}
+
 void SettingsWindow::onDeviceColorDepth_valueChanged(int value)
 {
 	DEBUG_LOW_LEVEL << Q_FUNC_INFO << value;
@@ -1219,7 +1390,7 @@ void SettingsWindow::onLightpackModes_currentIndexChanged(int index)
 		case MoodLampModeIndex:
 			Settings::setLightpackMode(MoodLampMode);
 			break;
-#ifdef BASS_SOUND_SUPPORT
+#ifdef SOUNDVIZ_SUPPORT
 		case SoundVisualizeModeIndex:
 			Settings::setLightpackMode(SoundVisualizeMode);
 			break;
@@ -1248,7 +1419,7 @@ void SettingsWindow::onLightpackModeChanged(Lightpack::Mode mode)
 		emit showLedWidgets(false);
 		break;
 
-#ifdef BASS_SOUND_SUPPORT
+#ifdef SOUNDVIZ_SUPPORT
 	case SoundVisualizeModeIndex:
 		ui->comboBox_LightpackModes->setCurrentIndex(SoundVisualizeModeIndex);
 		ui->stackedWidget_LightpackModes->setCurrentIndex(SoundVisualizeModeIndex);
@@ -1275,6 +1446,14 @@ void SettingsWindow::onMoodLampSpeed_valueChanged(int value)
 	Settings::setMoodLampSpeed(value);
 }
 
+void SettingsWindow::onMoodLampLamp_currentIndexChanged(int index)
+{
+	if (!updatingFromSettings) {
+		DEBUG_MID_LEVEL << Q_FUNC_INFO << index << ui->comboBox_MoodLampLamp->currentData().toInt();
+		Settings::setMoodLampLamp(ui->comboBox_MoodLampLamp->currentData().toInt());
+	}
+}
+
 void SettingsWindow::onMoodLampLiquidMode_Toggled(bool checked)
 {
 	DEBUG_LOW_LEVEL << Q_FUNC_INFO << checked;
@@ -1290,12 +1469,20 @@ void SettingsWindow::onMoodLampLiquidMode_Toggled(bool checked)
 	}
 }
 
-#ifdef BASS_SOUND_SUPPORT
+#ifdef SOUNDVIZ_SUPPORT
 void SettingsWindow::onSoundVizDevice_currentIndexChanged(int index)
 {
 	if (!updatingFromSettings) {
 		DEBUG_MID_LEVEL << Q_FUNC_INFO << index << ui->comboBox_SoundVizDevice->currentData().toInt();
 		Settings::setSoundVisualizerDevice(ui->comboBox_SoundVizDevice->currentData().toInt());
+	}
+}
+
+void SettingsWindow::onSoundVizVisualizer_currentIndexChanged(int index)
+{
+	if (!updatingFromSettings) {
+		DEBUG_MID_LEVEL << Q_FUNC_INFO << index << ui->comboBox_SoundVizVisualizer->currentData().toInt();
+		Settings::setSoundVisualizerVisualizer(ui->comboBox_SoundVizVisualizer->currentData().toInt());
 	}
 }
 
@@ -1672,7 +1859,7 @@ void SettingsWindow::updateUiFromSettings()
 	onLightpackModeChanged(mode);
 
 	ui->checkBox_ExpertModeEnabled->setChecked						(Settings::isExpertModeEnabled());
-	
+
 	ui->checkBox_checkForUpdates->setChecked							(Settings::isCheckForUpdatesEnabled());
 	ui->checkBox_installUpdates->setChecked							(Settings::isInstallUpdatesEnabled());
 
@@ -1680,12 +1867,18 @@ void SettingsWindow::updateUiFromSettings()
 	ui->checkBox_KeepLightsOnAfterExit->setChecked					(Settings::isKeepLightsOnAfterExit());
 	ui->checkBox_KeepLightsOnAfterLockComputer->setChecked			(Settings::isKeepLightsOnAfterLock());
 	ui->checkBox_KeepLightsOnAfterSuspend->setChecked				(Settings::isKeepLightsOnAfterSuspend());
+	ui->checkBox_KeepLightsOnAfterScreenOff->setChecked				(Settings::isKeepLightsOnAfterScreenOff());
 	ui->checkBox_PingDeviceEverySecond->setChecked					(Settings::isPingDeviceEverySecond());
 
 	ui->checkBox_GrabIsAvgColors->setChecked							(Settings::isGrabAvgColorsEnabled());
 	ui->spinBox_GrabSlowdown->setValue								(Settings::getGrabSlowdown());
 	ui->spinBox_GrabOverBrighten->setValue							(Settings::getGrabOverBrighten());
-	ui->checkBox_GrabApplyGammaRamp->setChecked						(Settings::isGrabApplyGammaRampEnabled());
+	ui->checkBox_GrabApplyBlueLightReduction->setChecked						(Settings::isGrabApplyBlueLightReductionEnabled());
+	ui->checkBox_GrabApplyColorTemperature->setChecked              (Settings::isGrabApplyColorTemperatureEnabled());
+	ui->spinBox_GrabColorTemperature->setValue                      (Settings::getGrabColorTemperature());
+	ui->horizontalSlider_GrabColorTemperature->setValue             (Settings::getGrabColorTemperature());
+	ui->doubleSpinBox_GrabGamma->setValue                           (Settings::getGrabGamma());
+	ui->horizontalSlider_GrabGamma->setValue                        (Settings::getGrabGamma() * 100);
 	ui->spinBox_LuminosityThreshold->setValue						(Settings::getLuminosityThreshold());
 
 	// Check the selected moodlamp mode (setChecked(false) not working to select another)
@@ -1697,14 +1890,28 @@ void SettingsWindow::updateUiFromSettings()
 	ui->radioButton_LiquidColorMoodLampMode->setChecked				(Settings::isMoodLampLiquidMode());
 	ui->pushButton_SelectColorMoodLamp->setColor						(Settings::getMoodLampColor());
 	ui->horizontalSlider_MoodLampSpeed->setValue						(Settings::getMoodLampSpeed());
+	for (int i = 0; i < ui->comboBox_MoodLampLamp->count(); i++) {
+		if (ui->comboBox_MoodLampLamp->itemData(i).toInt() == Settings::getMoodLampLamp()) {
+			ui->comboBox_MoodLampLamp->setCurrentIndex(i);
+			break;
+		}
+	}
 
-#ifdef BASS_SOUND_SUPPORT
+#ifdef SOUNDVIZ_SUPPORT
 	for (int i = 0; i < ui->comboBox_SoundVizDevice->count(); i++) {
 		if (ui->comboBox_SoundVizDevice->itemData(i).toInt() == Settings::getSoundVisualizerDevice()) {
 			ui->comboBox_SoundVizDevice->setCurrentIndex(i);
 			break;
 		}
 	}
+
+	for (int i = 0; i < ui->comboBox_SoundVizVisualizer->count(); i++) {
+		if (ui->comboBox_SoundVizVisualizer->itemData(i).toInt() == Settings::getSoundVisualizerVisualizer()) {
+			ui->comboBox_SoundVizVisualizer->setCurrentIndex(i);
+			break;
+		}
+	}
+
 	ui->pushButton_SelectColorSoundVizMin->setColor					(Settings::getSoundVisualizerMinColor());
 	ui->pushButton_SelectColorSoundVizMax->setColor					(Settings::getSoundVisualizerMaxColor());
 	ui->radioButton_SoundVizConstantMode->setChecked					(!Settings::isSoundVisualizerLiquidMode());
@@ -1715,6 +1922,7 @@ void SettingsWindow::updateUiFromSettings()
 	ui->checkBox_DisableUsbPowerLed->setChecked						(Settings::isDeviceUsbPowerLedDisabled());
 	ui->horizontalSlider_DeviceRefreshDelay->setValue				(Settings::getDeviceRefreshDelay());
 	ui->horizontalSlider_DeviceBrightness->setValue					(Settings::getDeviceBrightness());
+	ui->horizontalSlider_DeviceBrightnessCap->setValue					(Settings::getDeviceBrightnessCap());
 	ui->horizontalSlider_DeviceSmooth->setValue						(Settings::getDeviceSmooth());
 	ui->horizontalSlider_DeviceColorDepth->setValue					(Settings::getDeviceColorDepth());
 	ui->doubleSpinBox_DeviceGamma->setValue							(Settings::getDeviceGamma());
@@ -1744,11 +1952,19 @@ void SettingsWindow::updateUiFromSettings()
 		ui->radioButton_GrabX11->setChecked(true);
 		break;
 #endif
+#ifdef MAC_OS_AV_GRAB_SUPPORT
+	case Grab::GrabberTypeMacAVFoundation:
+		ui->radioButton_GrabMacAVFoundation->setChecked(true);
+		break;
+#endif
 #ifdef MAC_OS_CG_GRAB_SUPPORT
 	case Grab::GrabberTypeMacCoreGraphics:
 		ui->radioButton_GrabMacCoreGraphics->setChecked(true);
 		break;
 #endif
+	default:
+		qWarning() << Q_FUNC_INFO << "unsupported grabber in settings: " << Settings::getGrabberType();
+		break;
 	}
 
 #ifdef D3D10_GRAB_SUPPORT
@@ -1778,6 +1994,11 @@ Grab::GrabberType SettingsWindow::getSelectedGrabberType()
 #ifdef DDUPL_GRAB_SUPPORT
 	if (ui->radioButton_GrabDDupl->isChecked()) {
 		return Grab::GrabberTypeDDupl;
+	}
+#endif
+#ifdef MAC_OS_AV_GRAB_SUPPORT
+	if (ui->radioButton_GrabMacAVFoundation->isChecked()) {
+		return Grab::GrabberTypeMacAVFoundation;
 	}
 #endif
 #ifdef MAC_OS_CG_GRAB_SUPPORT
@@ -1832,18 +2053,20 @@ void SettingsWindow::versionsUpdate()
 	DEBUG_LOW_LEVEL << Q_FUNC_INFO;
 
 	// use template to construct version string
-	QString versionsTemplate = tr("<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.0//EN\" \"http://www.w3.org/TR/REC-html40/strict.dtd\"> <html><head><meta name=\"qrichtext\" content=\"1\" /><style type=\"text/css\"> p, li { white-space: pre-wrap; } </style></head><body style=\" font-family:'MS Shell Dlg 2'; font-size:8.25pt; font-weight:400; font-style:normal;\"> <p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\">software <span style=\" font-size:8pt; font-weight:600;\">%1</span><span style=\" font-size:8pt;\"> (revision </span><a href=\"https://github.com/psieg/Lightpack/commit/%2\"><span style=\" font-size:8pt; text-decoration: underline; color:#0000ff;\">%2</span></a><span style=\" font-size:8pt;\">), firmware <b>%3</b></span></p></body></html>");
+	QString versionsTemplate = tr("<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.0//EN\" \"http://www.w3.org/TR/REC-html40/strict.dtd\"> <html><head><meta name=\"qrichtext\" content=\"1\" /><style type=\"text/css\"> p, li { white-space: pre-wrap; } </style></head><body style=\" font-family:'MS Shell Dlg 2'; font-size:8.25pt; font-weight:400; font-style:normal;\"> <p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\">software <span style=\" font-size:8pt; font-weight:600;\">%1</span><span style=\" font-size:8pt;\"> (rev </span><a href=\"https://github.com/psieg/Lightpack/commit/%2\"><span style=\" font-size:8pt; text-decoration: underline; color:#0000ff;\">%2</span></a><span style=\" font-size:8pt;\">, Qt %4), firmware <b>%3</b></span></p></body></html>");
 
 #ifdef GIT_REVISION
 	versionsTemplate = versionsTemplate.arg(
 				QApplication::applicationVersion(),
 				GIT_REVISION,
-				fimwareVersion );
+				fimwareVersion,
+				QT_VERSION_STR);
 #else
 	versionsTemplate = versionsTemplate.arg(
 				QApplication::applicationVersion(),
 				"unknown",
-				fimwareVersion );
+				fimwareVersion,
+				QT_VERSION_STR);
 	versionsTemplate.remove(QRegExp(" \\([^()]+unknown[^()]+\\)"));
 #endif
 
@@ -1857,6 +2080,13 @@ void SettingsWindow::showHelpOf(QObject *object)
 {
 	QCoreApplication::postEvent(object, new QHelpEvent(QEvent::WhatsThis, QPoint(0,0), QCursor::pos()));
 }
+
+#if defined(SOUNDVIZ_SUPPORT) && defined(Q_OS_MACOS)
+void SettingsWindow::on_pushButton_SoundVizDeviceHelp_clicked()
+{
+	showHelpOf(ui->pushButton_SoundVizDeviceHelp);
+}
+#endif
 
 void SettingsWindow::on_pushButton_LightpackSmoothnessHelp_clicked()
 {
@@ -1878,9 +2108,24 @@ void SettingsWindow::on_pushButton_GammaCorrectionHelp_clicked()
 	showHelpOf(ui->horizontalSlider_GammaCorrection);
 }
 
+void SettingsWindow::on_pushButton_BrightnessCapHelp_clicked()
+{
+	showHelpOf(ui->horizontalSlider_DeviceBrightnessCap);
+}
+
 void SettingsWindow::on_pushButton_lumosityThresholdHelp_clicked()
 {
 	showHelpOf(ui->horizontalSlider_LuminosityThreshold);
+}
+
+void SettingsWindow::on_pushButton_grabApplyColorTemperatureHelp_clicked()
+{
+	showHelpOf(ui->checkBox_GrabApplyColorTemperature);
+}
+
+void SettingsWindow::on_pushButton_grabGammaHelp_clicked()
+{
+	showHelpOf(ui->horizontalSlider_GrabGamma);
 }
 
 void SettingsWindow::on_pushButton_grabOverBrightenHelp_clicked()
@@ -1905,7 +2150,7 @@ void SettingsWindow::updatePlugin(QList<Plugin*> plugins)
 
 	_plugins = plugins;
 	// sort priority
-	qSort(_plugins.begin() , _plugins.end(), SettingsWindow::toPriority );
+	std::sort(_plugins.begin(), _plugins.end(), SettingsWindow::toPriority);
 	ui->list_Plugins->clear();
 	foreach(Plugin* plugin, _plugins){
 		int index = _plugins.indexOf(plugin);
@@ -2021,16 +2266,13 @@ QString SettingsWindow::getPluginName(const Plugin *plugin) const
 
 void SettingsWindow::on_pbRunConfigurationWizard_clicked()
 {
+	const QStringList args("--wizard");
+	QString cmdLine(QApplication::applicationFilePath());
 #ifdef Q_OS_WIN
-	QString cmdLine;
-	cmdLine.append("\"");
-	cmdLine.append(QApplication::applicationFilePath());
-	cmdLine.append("\"");
-	cmdLine.append(" --wizard");
-	QProcess::startDetached(cmdLine);
-#else
-	QProcess::startDetached(QApplication::applicationFilePath().append(" --wizard"));
+	cmdLine.prepend('"');
+	cmdLine.append('"');
 #endif
+	QProcess::startDetached(cmdLine, args);
 
 	quit();
 }
@@ -2048,6 +2290,11 @@ void SettingsWindow::onKeepLightsAfterLock_Toggled(bool isEnabled)
 void SettingsWindow::onKeepLightsAfterSuspend_Toggled(bool isEnabled)
 {
 	Settings::setKeepLightsOnAfterSuspend(isEnabled);
+}
+
+void SettingsWindow::onKeepLightsAfterScreenOff_Toggled(bool isEnabled)
+{
+	Settings::setKeepLightsOnAfterScreenOff(isEnabled);
 }
 
 void SettingsWindow::onCheckBox_checkForUpdates_Toggled(bool isEnabled)

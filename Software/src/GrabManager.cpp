@@ -37,12 +37,14 @@
 #include "WinAPIGrabber.hpp"
 #include "DDuplGrabber.hpp"
 #include "X11Grabber.hpp"
-#include "MacOSGrabber.hpp"
+#include "MacOSCGGrabber.hpp"
+#include "MacOSAVGrabber.h"
 #include "D3D10Grabber.hpp"
 #include "GrabManager.hpp"
+#include "BlueLightReduction.hpp"
 #ifdef Q_OS_WIN
 #include "WinUtils.hpp"
-#endif
+#endif // Q_OS_WIN
 
 using namespace SettingsScope;
 
@@ -70,6 +72,8 @@ GrabManager::GrabManager(QWidget *parent) : QObject(parent)
 	m_grabCountLastInterval = 0;
 	m_grabCountThisInterval = 0;
 
+	m_blueLightClient = nullptr;
+
 	m_grabberContext = new GrabberContext();
 
 	m_isSendDataOnlyIfColorsChanged = Settings::isSendDataOnlyIfColorsChanges();
@@ -78,11 +82,13 @@ GrabManager::GrabManager(QWidget *parent) : QObject(parent)
 	m_grabber = queryGrabber(Settings::getGrabberType());
 
 	m_timerUpdateFPS = new QTimer(this);
+	m_timerUpdateFPS->setTimerType(Qt::PreciseTimer);
 	connect(m_timerUpdateFPS, SIGNAL(timeout()), this, SLOT(timeoutUpdateFPS()));
 	m_timerUpdateFPS->setSingleShot(false);
 	m_timerUpdateFPS->setInterval(FPS_UPDATE_INTERVAL);
 
 	m_timerFakeGrab = new QTimer(this);
+	m_timerFakeGrab->setTimerType(Qt::PreciseTimer);
 	connect(m_timerFakeGrab, SIGNAL(timeout()), this, SLOT(timeoutFakeGrab()));
 	m_timerFakeGrab->setSingleShot(false);
 	m_timerFakeGrab->setInterval(FAKE_GRAB_INTERVAL);
@@ -112,6 +118,9 @@ GrabManager::~GrabManager()
 	m_grabber = NULL;
 	delete m_timerFakeGrab;
 	delete m_timerUpdateFPS;
+
+	if (m_blueLightClient)
+		delete m_blueLightClient;
 
 	for (int i = 0; i < m_ledWidgets.size(); i++)
 	{
@@ -144,11 +153,15 @@ void GrabManager::start(bool isGrabEnabled)
 	clearColorsNew();
 
 	m_isGrabbingStarted = isGrabEnabled;
+	if (!isGrabEnabled && m_isGrabbingSuspendedDueToDeviceError) {
+		m_isGrabbingSuspendedDueToDeviceError = false; // Don't restart after device recovery if the user stopped
+	}
 
 	if (m_grabber != NULL) {
 		if (isGrabEnabled) {
 			m_timerUpdateFPS->start();
 			m_grabber->startGrabbing();
+			m_isGrabbingSuspendedDueToDeviceError = false;
 		} else {
 			clearColorsCurrent();
 			m_timerUpdateFPS->stop();
@@ -156,6 +169,26 @@ void GrabManager::start(bool isGrabEnabled)
 			m_grabber->stopGrabbing();
 			emit ambilightTimeOfUpdatingColors(0);
 		}
+	}
+}
+
+void GrabManager::ledDeviceCallSuccess(bool isSuccess) {
+	if (!isSuccess) {
+		if (!m_isGrabbingSuspendedDueToDeviceError) {
+			if (m_isGrabbingStarted) {
+				DEBUG_LOW_LEVEL << Q_FUNC_INFO << "stopping grabbing while device is not available";
+				start(false);
+				m_isGrabbingSuspendedDueToDeviceError = true; // Stop clears the bit (for user stop), so re-set it here
+			}
+		}
+	}
+}
+
+void GrabManager::ledDeviceOpenSuccess(bool isSuccess) {
+	if (isSuccess && m_isGrabbingSuspendedDueToDeviceError) {
+		m_isGrabbingSuspendedDueToDeviceError = false;
+		DEBUG_LOW_LEVEL << Q_FUNC_INFO << "device available again, resuming grabbing";
+		start(true);
 	}
 }
 
@@ -231,10 +264,40 @@ void GrabManager::onGrabOverBrightenChanged(int value) {
 	m_overBrighten = value;
 }
 
-void GrabManager::onGrabApplyGammaRampChanged(bool state)
+void GrabManager::onGrabApplyBlueLightReductionChanged(bool state)
 {
 	DEBUG_LOW_LEVEL << Q_FUNC_INFO << state;
-	m_isApplyGammaRamp = state;
+	m_isApplyBlueLightReduction = state;
+
+	if (m_isApplyBlueLightReduction && m_blueLightClient == nullptr)
+	{
+		m_blueLightClient = BlueLightReduction::create();
+		if (m_blueLightClient == nullptr)
+			qWarning() << Q_FUNC_INFO << "could not create Blue Light Reduction client";
+	}
+	else if (!m_isApplyBlueLightReduction && m_blueLightClient != nullptr)
+	{
+		delete m_blueLightClient;
+		m_blueLightClient = nullptr;
+	}
+}
+
+void GrabManager::onGrabApplyColorTemperatureChanged(bool state)
+{
+	DEBUG_LOW_LEVEL << Q_FUNC_INFO << state;
+	m_isApplyColorTemperature = state;
+}
+
+void GrabManager::onGrabColorTemperatureChanged(int value)
+{
+	DEBUG_LOW_LEVEL << Q_FUNC_INFO << value;
+	m_colorTemperature = value;
+}
+
+void GrabManager::onGrabGammaChanged(double gamma)
+{
+	DEBUG_LOW_LEVEL << Q_FUNC_INFO << gamma;
+	m_gamma = gamma;
 }
 
 void GrabManager::onSendDataOnlyIfColorsEnabledChanged(bool state)
@@ -284,7 +347,10 @@ void GrabManager::settingsProfileChanged(const QString &profileName)
 	m_isSendDataOnlyIfColorsChanged = Settings::isSendDataOnlyIfColorsChanges();
 	m_avgColorsOnAllLeds = Settings::isGrabAvgColorsEnabled();
 	m_overBrighten = Settings::getGrabOverBrighten();
-	m_isApplyGammaRamp = Settings::isGrabApplyGammaRampEnabled();
+	m_isApplyBlueLightReduction = Settings::isGrabApplyBlueLightReductionEnabled();
+	m_isApplyColorTemperature = Settings::isGrabApplyColorTemperatureEnabled();
+	m_colorTemperature = Settings::getGrabColorTemperature();
+	m_gamma = Settings::getGrabGamma();
 
 	setNumberOfLeds(Settings::getNumberOfLeds(Settings::getConnectedDevice()));
 }
@@ -345,7 +411,7 @@ void GrabManager::handleGrabbedColors()
 	if (m_isPauseGrabWhileResizeOrMoving)
 	{
 		return;
-	}	
+	}
 
 	// Work on a copy
 	m_colorsProcessing = m_colorsNew;
@@ -355,12 +421,12 @@ void GrabManager::handleGrabbedColors()
 	int avgR = 0, avgG = 0, avgB = 0;
 	int countGrabEnabled = 0;
 
-#ifdef Q_OS_WIN
-	if (m_isApplyGammaRamp)
+	if (m_isApplyColorTemperature)
 	{
-		WinUtils::ApplyPrimaryGammaRamp(m_colorsProcessing);
+		PrismatikMath::applyColorTemperature(m_colorsProcessing, m_colorTemperature, m_gamma);
 	}
-#endif
+	else if (m_isApplyBlueLightReduction && m_blueLightClient)
+		m_blueLightClient->apply(m_colorsProcessing, SettingsScope::Profile::Grab::GammaDefault);
 
 	if (m_avgColorsOnAllLeds)
 	{
@@ -459,9 +525,11 @@ void GrabManager::updateScreenGeometry()
 {
 	DEBUG_LOW_LEVEL << Q_FUNC_INFO;
 	m_lastScreenGeometry.clear();
-	for (int i = 0; i < QApplication::desktop()->screenCount(); ++i) {
-		m_lastScreenGeometry.append(QApplication::desktop()->screenGeometry(i));
+	QList<QScreen*> screenList = QGuiApplication::screens();
+	foreach(QScreen* screen, screenList) {
+		m_lastScreenGeometry.append(screen->geometry());
 	}
+	
 	emit changeScreen();
 	if (m_grabber == NULL)
 	{
@@ -480,7 +548,7 @@ void GrabManager::scaleLedWidgets(int screenIndexResized)
 {
 	DEBUG_LOW_LEVEL << Q_FUNC_INFO << "screenIndexResized:" << screenIndexResized;
 
-	QRect screenGeometry = QApplication::desktop()->screenGeometry(screenIndexResized);
+	QRect screenGeometry = QGuiApplication::screens().value(screenIndexResized, QGuiApplication::primaryScreen())->geometry();
 	QRect lastScreenGeometry = m_lastScreenGeometry[screenIndexResized];
 
 	DEBUG_LOW_LEVEL << Q_FUNC_INFO << "screen " << screenIndexResized << " is resized to " << screenGeometry;
@@ -565,7 +633,10 @@ void GrabManager::initGrabbers()
 #endif
 
 #ifdef MAC_OS_CG_GRAB_SUPPORT
-	m_grabbers[Grab::GrabberTypeMacCoreGraphics] = initGrabber(new MacOSGrabber(NULL, m_grabberContext));
+	m_grabbers[Grab::GrabberTypeMacCoreGraphics] = initGrabber(new MacOSCGGrabber(NULL, m_grabberContext));
+#endif
+#ifdef MAC_OS_AV_GRAB_SUPPORT
+	m_grabbers[Grab::GrabberTypeMacAVFoundation] = initGrabber(new MacOSAVGrabber(NULL, m_grabberContext));
 #endif
 #ifdef D3D10_GRAB_SUPPORT
 	if (Settings::isDx1011GrabberEnabled()) {

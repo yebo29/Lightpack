@@ -25,6 +25,11 @@
 
 #include "WinUtils.hpp"
 
+#ifdef NIGHTLIGHT_SUPPORT
+#include "NightLightLibrary.h"
+#include "PrismatikMath.hpp"
+#endif // NIGHTLIGHT_SUPPORT
+
 #include <psapi.h>
 #include <tlhelp32.h>
 #include <shlwapi.h>
@@ -44,11 +49,12 @@ const WCHAR lightpackOffsetFinderName[] = L"offsetfinder.exe";
 #endif
 static LPCWSTR pwstrExcludeProcesses[] = {
 	// Windows
-	L"dwm.exe", L"ShellExperienceHost.exe", L"ApplicationFrameHost.exe", L"LockAppHost.exe", L"explorer.exe", L"SearchUI.exe"
+	L"dwm.exe", L"ShellExperienceHost.exe", L"ApplicationFrameHost.exe", L"LockAppHost.exe", L"explorer.exe", L"SearchUI.exe",
+	L"svchost.exe", L"lsass.exe", L"fontdrvhost.exe", L"winlogon.exe", L"dllhost.exe",
 	// Graphics Drivers
 	L"igfxEM.exe", L"igfxTray.exe", L"nvxdsync.exe", L"nvvsvc.exe",
 	// Browsers
-	L"chrome.exe", L"firefox.exe", L"iexplore.exe",
+	L"chrome.exe", L"firefox.exe", L"iexplore.exe", L"MicrosoftEdgeCP.exe",
 	// Apps
 	L"skype.exe", L"SkypeHost.exe", L"qtcreator.exe", L"devenv.exe", L"thunderbird.exe", L"Steam.exe"
 };
@@ -250,6 +256,8 @@ QList<DWORD> * getProcessesIDs(QList<DWORD> * processes, LPCWSTR withModule[], U
 
 				}
 
+			} else {
+				DEBUG_HIGH_LEVEL << Q_FUNC_INFO << debug_buf_process << "module enum failed:" << GetLastError();
 			}
 		nextProcess:
 			// Release the handle to the process.
@@ -364,40 +372,85 @@ VOID FreeRestrictedSD(PVOID ptr) {
 	return;
 }
 
-
-
-void ApplyPrimaryGammaRamp(QList<QRgb>& colors) {
-	WORD GammaArray[3][256];
-	POINT p;
-	MONITORINFOEX monInfo;
-	p.x = 0;
-	p.y = 0;
-	monInfo.cbSize = sizeof(MONITORINFOEX);
-
-	HMONITOR mon = MonitorFromPoint(p, MONITOR_DEFAULTTOPRIMARY);
-	if (!GetMonitorInfo(mon, &monInfo)) {
-		qWarning() << Q_FUNC_INFO << "Unable to get monitor info:" << GetLastError();
-		return;
+#if defined(NIGHTLIGHT_SUPPORT)
+	NightLight::NightLight() : _client(new NightLightLibrary::NightLightWrapper())
+	{
+		_client->startWatching();
 	}
 
-	HDC dc = CreateDC(TEXT("DISPLAY"), monInfo.szDevice, NULL, NULL);
-	if (!GetDeviceGammaRamp(dc, &GammaArray)) {
-		qWarning() << Q_FUNC_INFO << "Unable to create DC:" << GetLastError();
-	} else {
+	NightLight::~NightLight()
+	{
+		_client->stopWatching();
+		delete _client;
+	}
+
+	bool NightLight::isSupported()
+	{
+		return NightLightLibrary::NightLightWrapper::isSupported(true);
+	}
+
+	void NightLight::apply(QList<QRgb>& colors, const double gamma)
+	{
+		PrismatikMath::applyColorTemperature(colors, _client->getSmoothenedColorTemperature(), gamma);
+	}
+#endif // NIGHTLIGHT_SUPPORT
+
+	bool GammaRamp::isSupported()
+	{
+		HDC dc = NULL;
+		WORD GammaArray[3][256];
+		return loadGamma(&GammaArray, &dc);
+	}
+
+	bool GammaRamp::loadGamma(LPVOID gamma, HDC* dc)
+	{
+		POINT p;
+		MONITORINFOEX monInfo;
+		p.x = 0;
+		p.y = 0;
+		monInfo.cbSize = sizeof(MONITORINFOEX);
+
+		HMONITOR mon = MonitorFromPoint(p, MONITOR_DEFAULTTOPRIMARY);
+		if (!GetMonitorInfo(mon, &monInfo)) {
+			qWarning() << Q_FUNC_INFO << "Unable to get monitor info:" << GetLastError();
+			return false;
+		}
+
+		*dc = CreateDC(TEXT("DISPLAY"), monInfo.szDevice, NULL, NULL);
+		if (!GetDeviceGammaRamp(*dc, gamma)) {
+			qWarning() << Q_FUNC_INFO << "Unable to create DC:" << GetLastError();
+			return false;
+		}
+
+		return true;
+	}
+
+	void GammaRamp::apply(QList<QRgb>& colors, const double/*gamma*/)
+	{
+		HDC dc = NULL;
+
+		// Reload the gamma ramp every 15 seconds only.
+		// There seems to be a memory leak somewhere in the API and we don't
+		// expect the ramp to change every frame.
+		if (time(nullptr) - _gammaAge > 15) {
+			if (!loadGamma(&_gammaArray, &dc))
+				return;
+			_gammaAge = time(nullptr);
+		}
+
 		for (QRgb& color : colors) {
 			int red = qRed(color);
 			int green = qGreen(color);
 			int blue = qBlue(color);
 
-			red = GammaArray[0][red] >> 8;
-			green = GammaArray[1][green] >> 8;
-			blue = GammaArray[2][blue] >> 8;
+			red = _gammaArray[0][red] >> 8;
+			green = _gammaArray[1][green] >> 8;
+			blue = _gammaArray[2][blue] >> 8;
 
 			color = qRgb(red, green, blue);
 		}
-	}
 
-	DeleteObject(dc);
-}
+		DeleteObject(dc);
+	}
 
 } // namespace WinUtils

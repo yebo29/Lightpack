@@ -34,8 +34,8 @@
 #include "Settings.hpp"
 #include "GrabManager.hpp"
 #include "MoodLampManager.hpp"
-#ifdef BASS_SOUND_SUPPORT
-#include "SoundManager.hpp"
+#ifdef SOUNDVIZ_SUPPORT
+#include "SoundManagerBase.hpp"
 #endif
 #include "ColorButton.hpp"
 #include "enums.hpp"
@@ -73,10 +73,13 @@ signals:
 	void updateSlowdown(int value);
 	void updateGamma(double value);
 	void updateBrightness(int percent);
+	void updateBrightnessCap(int percent);
 	void requestFirmwareVersion();
-#ifdef BASS_SOUND_SUPPORT
+#ifdef SOUNDVIZ_SUPPORT
 	void requestSoundVizDevices();
+	void requestSoundVizVisualizers();
 #endif
+	void requestMoodLampLamps();
 	void recreateLedDevice();
 	void resultBacklightStatus(Backlight::Status);
 	void backlightStatusChanged(Backlight::Status);
@@ -110,8 +113,10 @@ public slots:
 	void onPingDeviceEverySecond_Toggled(bool state);
 	void processMessage(const QString &message);
 
-#ifdef BASS_SOUND_SUPPORT
+	void updateAvailableMoodLampLamps(const QList<MoodLampLampInfo> & lamps, int recommended);
+#ifdef SOUNDVIZ_SUPPORT
 	void updateAvailableSoundVizDevices(const QList<SoundManagerDeviceInfo> & devices, int recommended);
+	void updateAvailableSoundVizVisualizers(const QList<SoundManagerVisualizerInfo> & visualizers, int recommended);
 #endif
 
 	void updatePlugin(QList<Plugin*> plugins);
@@ -132,13 +137,18 @@ private slots:
 	void onLightpackModeChanged(Lightpack::Mode);
 	void onMoodLampColor_changed(QColor color);
 	void onMoodLampSpeed_valueChanged(int value);
+	void onMoodLampLamp_currentIndexChanged(int index);
 	void onMoodLampLiquidMode_Toggled(bool isLiquidMode);
-#ifdef BASS_SOUND_SUPPORT
+#ifdef SOUNDVIZ_SUPPORT
 	void onSoundVizDevice_currentIndexChanged(int index);
+	void onSoundVizVisualizer_currentIndexChanged(int index);
 	void onSoundVizMinColor_changed(QColor color);
 	void onSoundVizMaxColor_changed(QColor color);
 	void onSoundVizLiquidMode_Toggled(bool isLiquidMode);
 	void onSoundVizLiquidSpeed_valueChanged(int value);
+#ifdef Q_OS_MACOS
+	void on_pushButton_SoundVizDeviceHelp_clicked();
+#endif
 #endif
 	void showAbout(); /* using in actions */
 	void onPostInit();
@@ -158,7 +168,11 @@ private slots:
 	void onGrabSlowdown_valueChanged(int value);
 	void onGrabIsAvgColors_toggled(bool state);
 	void onGrabOverBrighten_valueChanged(int value);
-	void onGrabApplyGammaRamp_toggled(bool state);
+	void onGrabApplyBlueLightReduction_toggled(bool state);
+	void onGrabApplyColorTemperature_toggled(bool state);
+	void onGrabColorTemperature_valueChanged(int value);
+	void onGrabGamma_valueChanged(double value);
+	void onSliderGrabGamma_valueChanged(int value);
 	void onLuminosityThreshold_valueChanged(int value);
 	void onMinimumLumosity_toggled(bool value);
 
@@ -166,6 +180,7 @@ private slots:
 	void onDisableUsbPowerLed_toggled(bool state);
 	void onDeviceSmooth_valueChanged(int value);
 	void onDeviceBrightness_valueChanged(int value);
+	void onDeviceBrightnessCap_valueChanged(int value);
 	void onDeviceColorDepth_valueChanged(int value);
 	void onDeviceGammaCorrection_valueChanged(double value);
 	void onSliderDeviceGammaCorrection_valueChanged(int value);
@@ -201,8 +216,12 @@ private slots:
 	void on_pushButton_LightpackRefreshDelayHelp_clicked();
 
 	void on_pushButton_GammaCorrectionHelp_clicked();
+	void on_pushButton_BrightnessCapHelp_clicked();
 
 	void on_pushButton_lumosityThresholdHelp_clicked();
+
+	void on_pushButton_grabApplyColorTemperatureHelp_clicked();
+	void on_pushButton_grabGammaHelp_clicked();
 
 	void on_pushButton_grabOverBrightenHelp_clicked();
 
@@ -217,11 +236,14 @@ private slots:
 	void onKeepLightsAfterExit_Toggled(bool isEnabled);
 	void onKeepLightsAfterLock_Toggled(bool isEnabled);
 	void onKeepLightsAfterSuspend_Toggled(bool isEnabled);
+	void onKeepLightsAfterScreenOff_Toggled(bool isEnabled);
 
 	void on_pbRunConfigurationWizard_clicked();
 
 	void onCheckBox_checkForUpdates_Toggled(bool isEnabled);
 	void onCheckBox_installUpdates_Toggled(bool isEnabled);
+
+	void clearBaudrateWarning();
 
 private:
 	void updateExpertModeWidgetsVisibility();
@@ -278,6 +300,8 @@ private:
 	QLabel *labelProfile;
 	QLabel *labelDevice;
 	QLabel *labelFPS;
+	double m_maxFPS{ 0 };
+	QTimer m_baudrateWarningClearTimer;
 
 	QCache<QString, QPixmap> m_pixmapCache;
 
@@ -288,7 +312,7 @@ private:
 	static const QString LightpackDownloadsPageUrl;
 	static const int GrabModeIndex;
 	static const int MoodLampModeIndex;
-#ifdef BASS_SOUND_SUPPORT
+#ifdef SOUNDVIZ_SUPPORT
 	static const int SoundVisualizeModeIndex;
 #endif
 

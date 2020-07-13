@@ -46,6 +46,7 @@ stuff/
 *.tmp
 *.dmg
 *moc_*.cpp
+moc_*.h
 *.eep
 *.elf
 *.lss
@@ -57,6 +58,7 @@ debug/
 release/
 Software/dist_windows/content
 Software/lib
+Software/.vs
 *.vcxproj
 *.filters
 *.sln
@@ -64,3 +66,7 @@ Software/lib
 *.sdf
 *.opensdf
 vc*.pdb
+*.xcodeproj
+*~
+Software/.qmake.stash
+.DS_Store

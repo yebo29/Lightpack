@@ -25,7 +25,6 @@
 
 
 #include "LiquidColorGenerator.hpp"
-#include "PrismatikMath.hpp"
 #include "Settings.hpp"
 #include <QTime>
 
@@ -40,10 +39,15 @@ const QColor LiquidColorGenerator::AvailableColors[LiquidColorGenerator::ColorsM
 
 LiquidColorGenerator::LiquidColorGenerator(QObject *parent) : QObject(parent)
 {
-	qsrand(QTime(0,0,0).secsTo(QTime::currentTime()));
+
+#if (QT_VERSION >= QT_VERSION_CHECK(5, 10, 0))
+	m_rnd.seed(QTime(0,0,0).secsTo(QTime::currentTime()));
+#else
+	qsrand(QTime(0, 0, 0).secsTo(QTime::currentTime()));
+#endif
 
 	m_isEnabled = false;
-
+	m_timer.setTimerType(Qt::PreciseTimer);
 	connect(&m_timer, SIGNAL(timeout()), this, SLOT(updateColor()));
 }
 
@@ -116,7 +120,11 @@ void LiquidColorGenerator::updateColor()
 
 int LiquidColorGenerator::generateDelay()
 {
-	return 1000 / (m_speed + PrismatikMath::rand(25) + 1);
+#if (QT_VERSION >= QT_VERSION_CHECK(5, 10, 0))
+	return 1000 / (m_speed + m_rnd.bounded(25) + 1);
+#else
+	return 1000 / (m_speed + (qrand() % 25) + 1);
+#endif
 }
 
 QColor LiquidColorGenerator::generateColor()
@@ -127,7 +135,11 @@ QColor LiquidColorGenerator::generateColor()
 			m_unselectedColors << AvailableColors[i];
 	}
 
-	int randIndex = PrismatikMath::rand(m_unselectedColors.size());
+#if (QT_VERSION >= QT_VERSION_CHECK(5, 10, 0))
+	int randIndex = m_rnd.bounded(std::max(1, m_unselectedColors.size()));
+#else
+	int randIndex = qrand() % std::max(1, m_unselectedColors.size());
+#endif
 
 	return m_unselectedColors.takeAt(randIndex);
 }

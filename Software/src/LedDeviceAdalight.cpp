@@ -44,7 +44,9 @@ LedDeviceAdalight::LedDeviceAdalight(const QString &portName, const int baudRate
 //	m_brightness = Settings::getDeviceBrightness();
 //	m_colorSequence =Settings::getColorSequence(SupportedDevices::DeviceTypeAdalight);
 	m_AdalightDevice = NULL;
-
+	m_lastWillTimer = new QTimer(this);
+	m_lastWillTimer->setTimerType(Qt::PreciseTimer);
+	connect(m_lastWillTimer, SIGNAL(timeout()), this, SLOT(writeLastWill()));
 	// TODO: think about init m_savedColors in all ILedDevices
 
 	DEBUG_LOW_LEVEL << Q_FUNC_INFO << "initialized";
@@ -53,16 +55,22 @@ LedDeviceAdalight::LedDeviceAdalight(const QString &portName, const int baudRate
 LedDeviceAdalight::~LedDeviceAdalight()
 {
 	close();
+	delete m_lastWillTimer;
 }
 
 void LedDeviceAdalight::close()
 {
-	if (m_AdalightDevice != NULL) {
-		m_AdalightDevice->close();
+	if (m_AdalightDevice == NULL)
+		return;
 
-		delete m_AdalightDevice;
-		m_AdalightDevice = NULL;
+	if (m_lastWillTimer->isActive()) {
+		m_lastWillTimer->stop();
+		writeLastWill(true);
 	}
+	m_AdalightDevice->close();
+
+	delete m_AdalightDevice;
+	m_AdalightDevice = NULL;
 }
 
 void LedDeviceAdalight::setColors(const QList<QRgb> & colors)
@@ -201,12 +209,13 @@ void LedDeviceAdalight::open()
 
 	m_AdalightDevice->setPortName(m_portName);// Settings::getAdalightSerialPortName());
 
-	m_AdalightDevice->open(QIODevice::WriteOnly | QIODevice::Unbuffered);
+	m_AdalightDevice->open(QIODevice::WriteOnly);
 	bool ok = m_AdalightDevice->isOpen();
 
 	// Ubuntu 10.04: on every second attempt to open the device leads to failure
 	if (ok == false)
 	{
+		qWarning() << Q_FUNC_INFO << "Serial device" << m_AdalightDevice->portName() << "open fail, will retry. Error" << (int)m_AdalightDevice->error() << m_AdalightDevice->errorString();
 		// Try one more time
 		m_AdalightDevice->open(QIODevice::WriteOnly);
 		ok = m_AdalightDevice->isOpen();
@@ -215,7 +224,6 @@ void LedDeviceAdalight::open()
 	if (ok)
 	{
 		DEBUG_LOW_LEVEL << Q_FUNC_INFO << "Serial device" << m_AdalightDevice->portName() << "open";
-
 		ok = m_AdalightDevice->setBaudRate(m_baudRate);//Settings::getAdalightSerialPortBaudRate());
 		if (ok)
 		{
@@ -226,16 +234,16 @@ void LedDeviceAdalight::open()
 				DEBUG_LOW_LEVEL << Q_FUNC_INFO << "Data bits	:" << m_AdalightDevice->dataBits();
 				DEBUG_LOW_LEVEL << Q_FUNC_INFO << "Parity		:" << m_AdalightDevice->parity();
 				DEBUG_LOW_LEVEL << Q_FUNC_INFO << "Stop bits	:" << m_AdalightDevice->stopBits();
-				DEBUG_LOW_LEVEL << Q_FUNC_INFO << "Flow		:" << m_AdalightDevice->flowControl();
+				DEBUG_LOW_LEVEL << Q_FUNC_INFO << "Flow			:" << m_AdalightDevice->flowControl();
 			} else {
-				qWarning() << Q_FUNC_INFO << "Set data bits 8 fail";
+				qWarning() << Q_FUNC_INFO << "Set data bits 8 fail. Error" << (int)m_AdalightDevice->error() << m_AdalightDevice->errorString();
 			}
 		} else {
-			qWarning() << Q_FUNC_INFO << "Set baud rate" << m_baudRate << "fail";
+			qWarning() << Q_FUNC_INFO << "Set baud rate" << m_baudRate << "fail. Error" << (int)m_AdalightDevice->error() << m_AdalightDevice->errorString();
 		}
 
 	} else {
-		qWarning() << Q_FUNC_INFO << "Serial device" << m_AdalightDevice->portName() << "open fail. " << m_AdalightDevice->errorString();
+		qWarning() << Q_FUNC_INFO << "Serial device" << m_AdalightDevice->portName() << "open fail. Error" << (int)m_AdalightDevice->error() << m_AdalightDevice->errorString();
 		DEBUG_OUT << Q_FUNC_INFO << "Available ports:";
 		QList<QSerialPortInfo> availPorts = QSerialPortInfo::availablePorts();
 		for(int i=0; i < availPorts.size(); i++) {
@@ -246,12 +254,29 @@ void LedDeviceAdalight::open()
 	emit openDeviceSuccess(ok);
 }
 
+void LedDeviceAdalight::writeLastWill(const bool force)
+{
+	if (force || m_AdalightDevice->bytesToWrite() == 0) {
+		DEBUG_MID_LEVEL << Q_FUNC_INFO << "Writing last will frame";
+		setColors(m_colorsSaved);
+	}
+}
+
 bool LedDeviceAdalight::writeBuffer(const QByteArray & buff)
 {
 	DEBUG_MID_LEVEL << Q_FUNC_INFO << "Hex:" << buff.toHex();
 
 	if (m_AdalightDevice == NULL || m_AdalightDevice->isOpen() == false)
 		return false;
+
+	if (m_AdalightDevice->bytesToWrite() > 0) {
+		DEBUG_MID_LEVEL << Q_FUNC_INFO << "Serial bytesToWrite:" << m_AdalightDevice->bytesToWrite() << ", skipping current frame";
+		// If no more writes will be done ("Send data only of colors changed")
+		// re-schedule last skipped frame in case it's important (for ex a black frame to turn off)
+		m_lastWillTimer->start(100);
+		return true;
+	}
+	m_lastWillTimer->stop();
 
 	int bytesWritten = m_AdalightDevice->write(buff);
 

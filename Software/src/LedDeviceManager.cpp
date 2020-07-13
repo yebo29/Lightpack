@@ -36,6 +36,9 @@
 #include "LedDeviceAdalight.hpp"
 #include "LedDeviceArdulight.hpp"
 #include "LedDeviceVirtual.hpp"
+#include "LedDeviceDrgb.hpp"
+#include "LedDeviceDnrgb.hpp"
+#include "LedDeviceWarls.hpp"
 #include "Settings.hpp"
 
 using namespace SettingsScope;
@@ -56,6 +59,10 @@ LedDeviceManager::LedDeviceManager(QObject *parent)
 	m_recreateTimer = NULL;
 
 	m_failedCreationAttempts = 0;
+
+	m_savedBrightness = SettingsScope::Profile::Device::BrightnessDefault;
+
+	m_savedBrightnessCap = SettingsScope::Profile::Device::BrightnessCapDefault;
 
 	for (int i = 0; i < SupportedDevices::DeviceTypesCount; i++)
 		m_ledDevices.append(NULL);
@@ -104,7 +111,7 @@ void LedDeviceManager::recreateLedDevice()
 
 void LedDeviceManager::switchOnLeds()
 {
-	DEBUG_MID_LEVEL << Q_FUNC_INFO;
+	DEBUG_LOW_LEVEL << Q_FUNC_INFO;
 
 	m_backlightStatus = Backlight::StatusOn;
 	if (m_isColorsSaved)
@@ -133,7 +140,7 @@ void LedDeviceManager::setColors(const QList<QRgb> & colors)
 
 void LedDeviceManager::switchOffLeds()
 {
-	DEBUG_MID_LEVEL << Q_FUNC_INFO << "Is last command completed:" << m_isLastCommandCompleted;
+	DEBUG_LOW_LEVEL << Q_FUNC_INFO << "Is last command completed:" << m_isLastCommandCompleted;
 
 	if (m_isLastCommandCompleted)
 	{
@@ -239,6 +246,22 @@ void LedDeviceManager::setBrightness(int value)
 	} else {
 		m_savedBrightness = value;
 		cmdQueueAppend(LedDeviceCommands::SetBrightness);
+	}
+}
+
+void LedDeviceManager::setBrightnessCap(int value)
+{
+	DEBUG_MID_LEVEL << Q_FUNC_INFO << value << "Is last command completed:" << m_isLastCommandCompleted;
+
+	if (m_isLastCommandCompleted)
+	{
+		m_isLastCommandCompleted = false;
+		m_cmdTimeoutTimer->start();
+		emit ledDeviceSetBrightnessCap(value);
+	}
+	else {
+		m_savedBrightnessCap = value;
+		cmdQueueAppend(LedDeviceCommands::SetBrightnessCap);
 	}
 }
 
@@ -416,7 +439,7 @@ void LedDeviceManager::initLedDevice()
 }
 
 AbstractLedDevice * LedDeviceManager::createLedDevice(SupportedDevices::DeviceType deviceType)
-{	
+{
 
 	if (deviceType == SupportedDevices::DeviceTypeAlienFx){
 #		if !defined(Q_OS_WIN)
@@ -427,42 +450,62 @@ AbstractLedDevice * LedDeviceManager::createLedDevice(SupportedDevices::DeviceTy
 #		endif /* Q_OS_WIN */
 	}
 
+	AbstractLedDevice* device = nullptr;
+
 	switch (deviceType){
 
 	case SupportedDevices::DeviceTypeLightpack:
 		DEBUG_LOW_LEVEL << Q_FUNC_INFO << "SupportedDevices::LightpackDevice";
-		return (AbstractLedDevice *)new LedDeviceLightpack();
+		device = (AbstractLedDevice *)new LedDeviceLightpack();
 
 	case SupportedDevices::DeviceTypeAlienFx:
 		DEBUG_LOW_LEVEL << Q_FUNC_INFO << "SupportedDevices::AlienFxDevice";
 
 #		ifdef Q_OS_WIN
-		return (AbstractLedDevice *)new LedDeviceAlienFx();
+		device = (AbstractLedDevice *)new LedDeviceAlienFx();
 #		else
 		break;
 #		endif /* Q_OS_WIN */
 
 	case SupportedDevices::DeviceTypeAdalight:
 		DEBUG_LOW_LEVEL << Q_FUNC_INFO << "SupportedDevices::AdalightDevice";
-		return (AbstractLedDevice *)new LedDeviceAdalight(Settings::getAdalightSerialPortName(), Settings::getAdalightSerialPortBaudRate());
+		device = (AbstractLedDevice *)new LedDeviceAdalight(Settings::getAdalightSerialPortName(), Settings::getAdalightSerialPortBaudRate());
 
 	case SupportedDevices::DeviceTypeArdulight:
 		DEBUG_LOW_LEVEL << Q_FUNC_INFO << "SupportedDevices::ArdulightDevice";
-		return (AbstractLedDevice *)new LedDeviceArdulight(Settings::getArdulightSerialPortName(), Settings::getArdulightSerialPortBaudRate());
+		device = (AbstractLedDevice *)new LedDeviceArdulight(Settings::getArdulightSerialPortName(), Settings::getArdulightSerialPortBaudRate());
+
+	case SupportedDevices::DeviceTypeDrgb:
+		DEBUG_LOW_LEVEL << Q_FUNC_INFO << "SupportedDevices::DrgbDevice";
+		device = (AbstractLedDevice*)new LedDeviceDrgb(Settings::getDrgbAddress(), Settings::getDrgbPort(), Settings::getDrgbTimeout());
+
+	case SupportedDevices::DeviceTypeDnrgb:
+		DEBUG_LOW_LEVEL << Q_FUNC_INFO << "SupportedDevices::DnrgbDevice";
+		device = (AbstractLedDevice*)new LedDeviceDnrgb(Settings::getDnrgbAddress(), Settings::getDnrgbPort(), Settings::getDnrgbTimeout());
+
+	case SupportedDevices::DeviceTypeWarls:
+		DEBUG_LOW_LEVEL << Q_FUNC_INFO << "SupportedDevices::WarlsDevice";
+		device = (AbstractLedDevice*)new LedDeviceWarls(Settings::getWarlsAddress(), Settings::getWarlsPort(), Settings::getWarlsTimeout());
 
 	case SupportedDevices::DeviceTypeVirtual:
 		DEBUG_LOW_LEVEL << Q_FUNC_INFO << "SupportedDevices::VirtualDevice";
-		return (AbstractLedDevice *)new LedDeviceVirtual();
+		device = (AbstractLedDevice *)new LedDeviceVirtual();
 
 	default:
 		break;
+	}
+
+	if (device) {
+		device->setLedMilliAmps(Settings::getDeviceLedMilliAmps(deviceType));
+		device->setPowerSupplyAmps(Settings::getDevicePowerSupplyAmps(deviceType));
+		return device;
 	}
 
 	qFatal("%s %s%d%s", Q_FUNC_INFO,
 			"Create LedDevice fail. deviceType = '", deviceType,
 			"'. Application exit.");
 
-	return NULL; // Avoid compiler warning
+	return nullptr; // Avoid compiler warning
 }
 
 void LedDeviceManager::connectSignalSlotsLedDevice()
@@ -472,10 +515,10 @@ void LedDeviceManager::connectSignalSlotsLedDevice()
 		qWarning() << Q_FUNC_INFO << "m_ledDevice == NULL";
 		return;
 	}
-	
+
 	connect(m_ledDevice, SIGNAL(commandCompleted(bool)),			this, SLOT(ledDeviceCommandCompleted(bool)),				Qt::QueuedConnection);
 	connect(m_ledDevice, SIGNAL(ioDeviceSuccess(bool)),				this, SLOT(ledDeviceIoDeviceSuccess(bool)),					Qt::QueuedConnection);
-	connect(m_ledDevice, SIGNAL(openDeviceSuccess(bool)),			this, SLOT(ledDeviceOpenDeviceSuccess(bool)),				Qt::QueuedConnection);	
+	connect(m_ledDevice, SIGNAL(openDeviceSuccess(bool)),			this, SLOT(ledDeviceOpenDeviceSuccess(bool)),				Qt::QueuedConnection);
 
 	connect(m_ledDevice, SIGNAL(firmwareVersion(QString)),			this, SIGNAL(firmwareVersion(QString)),						Qt::QueuedConnection);
 	connect(m_ledDevice, SIGNAL(firmwareVersionUnofficial(int)),	this, SIGNAL(firmwareVersionUnofficial(int)),				Qt::QueuedConnection);
@@ -490,11 +533,12 @@ void LedDeviceManager::connectSignalSlotsLedDevice()
 	connect(this, SIGNAL(ledDeviceSetSmoothSlowdown(int)),				m_ledDevice, SLOT(setSmoothSlowdown(int)),						Qt::QueuedConnection);
 	connect(this, SIGNAL(ledDeviceSetGamma(double)),					m_ledDevice, SLOT(setGamma(double)),							Qt::QueuedConnection);
 	connect(this, SIGNAL(ledDeviceSetBrightness(int)),					m_ledDevice, SLOT(setBrightness(int)),							Qt::QueuedConnection);
+	connect(this, SIGNAL(ledDeviceSetBrightnessCap(int)),				m_ledDevice, SLOT(setBrightnessCap(int)),						Qt::QueuedConnection);
 	connect(this, SIGNAL(ledDeviceSetColorSequence(QString)),			m_ledDevice, SLOT(setColorSequence(QString)),					Qt::QueuedConnection);
 	connect(this, SIGNAL(ledDeviceSetLuminosityThreshold(int)),			m_ledDevice, SLOT(setLuminosityThreshold(int)),					Qt::QueuedConnection);
 	connect(this, SIGNAL(ledDeviceSetMinimumLuminosityEnabled(bool)),	m_ledDevice, SLOT(setMinimumLuminosityThresholdEnabled(bool)),	Qt::QueuedConnection);
 	connect(this, SIGNAL(ledDeviceRequestFirmwareVersion()),			m_ledDevice, SLOT(requestFirmwareVersion()),					Qt::QueuedConnection);
-	connect(this, SIGNAL(ledDeviceUpdateWBAdjustments()),				m_ledDevice, SLOT(updateDeviceSettings()),						Qt::QueuedConnection);
+	connect(this, SIGNAL(ledDeviceUpdateWBAdjustments()),				m_ledDevice, SLOT(updateWBAdjustments()),						Qt::QueuedConnection);
 	connect(this, SIGNAL(ledDeviceUpdateDeviceSettings()),				m_ledDevice, SLOT(updateDeviceSettings()),						Qt::QueuedConnection);
 }
 
@@ -523,11 +567,12 @@ void LedDeviceManager::disconnectSignalSlotsLedDevice()
 	disconnect(this, SIGNAL(ledDeviceSetSmoothSlowdown(int)),				m_ledDevice, SLOT(setSmoothSlowdown(int)));
 	disconnect(this, SIGNAL(ledDeviceSetGamma(double)),						m_ledDevice, SLOT(setGamma(double)));
 	disconnect(this, SIGNAL(ledDeviceSetBrightness(int)),					m_ledDevice, SLOT(setBrightness(int)));
+	disconnect(this, SIGNAL(ledDeviceSetBrightnessCap(int)),				m_ledDevice, SLOT(setBrightnessCap(int)));
 	disconnect(this, SIGNAL(ledDeviceSetColorSequence(QString)),			m_ledDevice, SLOT(setColorSequence(QString)));
 	disconnect(this, SIGNAL(ledDeviceSetLuminosityThreshold(int)),			m_ledDevice, SLOT(setLuminosityThreshold(int)));
 	disconnect(this, SIGNAL(ledDeviceSetMinimumLuminosityEnabled(bool)),	m_ledDevice, SLOT(setMinimumLuminosityThresholdEnabled(bool)));
 	disconnect(this, SIGNAL(ledDeviceRequestFirmwareVersion()),				m_ledDevice, SLOT(requestFirmwareVersion()));
-	disconnect(this, SIGNAL(ledDeviceUpdateWBAdjustments()),				m_ledDevice, SLOT(updateDeviceSettings()));
+	disconnect(this, SIGNAL(ledDeviceUpdateWBAdjustments()),				m_ledDevice, SLOT(updateWBAdjustments()));
 	disconnect(this, SIGNAL(ledDeviceUpdateDeviceSettings()),				m_ledDevice, SLOT(updateDeviceSettings()));
 }
 
@@ -593,6 +638,11 @@ void LedDeviceManager::cmdQueueProcessNext()
 		case LedDeviceCommands::SetBrightness:
 			m_cmdTimeoutTimer->start();
 			emit ledDeviceSetBrightness(m_savedBrightness);
+			break;
+
+		case LedDeviceCommands::SetBrightnessCap:
+			m_cmdTimeoutTimer->start();
+			emit ledDeviceSetBrightnessCap(m_savedBrightnessCap);
 			break;
 
 		case LedDeviceCommands::SetColorSequence:

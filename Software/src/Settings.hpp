@@ -111,6 +111,8 @@ public:
 	static void setKeepLightsOnAfterLock(bool isEnabled);
 	static bool isKeepLightsOnAfterSuspend();
 	static void setKeepLightsOnAfterSuspend(bool isEnabled);
+	static bool isKeepLightsOnAfterScreenOff();
+	static void setKeepLightsOnAfterScreenOff(bool isEnabled);
 	static bool isPingDeviceEverySecond();
 	static void setPingDeviceEverySecond(bool isEnabled);
 	static bool isUpdateFirmwareMessageShown();
@@ -130,6 +132,28 @@ public:
 	static void setArdulightSerialPortName(const QString & port);
 	static int getArdulightSerialPortBaudRate();
 	static void setArdulightSerialPortBaudRate(const QString & baud);
+	static QString getDrgbAddress();
+	static void setDrgbAddress(const QString& address);
+	static QString getDrgbPort();
+	static void setDrgbPort(const QString& port);
+	static int getDrgbTimeout();
+	static void setDrgbTimeout(const int timeout);
+	static QString getDnrgbAddress();
+	static void setDnrgbAddress(const QString& address);
+	static QString getDnrgbPort();
+	static void setDnrgbPort(const QString& port);
+	static int getDnrgbTimeout();
+	static void setDnrgbTimeout(const int timeout);
+	static QString getWarlsAddress();
+	static void setWarlsAddress(const QString& address);
+	static QString getWarlsPort();
+	static void setWarlsPort(const QString& port);
+	static int getWarlsTimeout();
+	static void setWarlsTimeout(const int timeout);
+	static int getDeviceLedMilliAmps(const SupportedDevices::DeviceType device);
+	static void setDeviceLedMilliAmps(const SupportedDevices::DeviceType device, const int mamps);
+	static double getDevicePowerSupplyAmps(const SupportedDevices::DeviceType device);
+	static void setDevicePowerSupplyAmps(const SupportedDevices::DeviceType device, const double amps);
 	static QStringList getSupportedSerialPortBaudRates();
 	static bool isConnectedDeviceUsesSerialPort();
 	// [Adalight | Ardulight | Lightpack | ... | Virtual]
@@ -148,8 +172,14 @@ public:
 	static void setGrabAvgColorsEnabled(bool isEnabled);
 	static int getGrabOverBrighten();
 	static void setGrabOverBrighten(int value);
-	static bool isGrabApplyGammaRampEnabled();
-	static void setGrabApplyGammaRampEnabled(bool value);
+	static bool isGrabApplyBlueLightReductionEnabled();
+	static void setGrabApplyBlueLightReductionEnabled(bool value);
+	static bool isGrabApplyColorTemperatureEnabled();
+	static void setGrabApplyColorTemperatureEnabled(bool value);
+	static int getGrabColorTemperature();
+	static void setGrabColorTemperature(int value);
+	static double getGrabGamma();
+	static void setGrabGamma(double gamma);
 	static bool isSendDataOnlyIfColorsChanges();
 	static void setSendDataOnlyIfColorsChanges(bool isEnabled);
 	static int getLuminosityThreshold();
@@ -163,6 +193,8 @@ public:
 	static void setDeviceUsbPowerLedDisabled(bool isDisabled);
 	static int getDeviceBrightness();
 	static void setDeviceBrightness(int value);
+	static int getDeviceBrightnessCap();
+	static void setDeviceBrightnessCap(int value);
 	static int getDeviceSmooth();
 	static void setDeviceSmooth(int value);
 	static int getDeviceColorDepth();
@@ -188,10 +220,14 @@ public:
 	static void setMoodLampColor(QColor color);
 	static int getMoodLampSpeed();
 	static void setMoodLampSpeed(int value);
+	static int getMoodLampLamp();
+	static void setMoodLampLamp(int value);
 
-#ifdef BASS_SOUND_SUPPORT
+#ifdef SOUNDVIZ_SUPPORT
 	static int getSoundVisualizerDevice();
 	static void setSoundVisualizerDevice(int value);
+	static int getSoundVisualizerVisualizer();
+	static void setSoundVisualizerVisualizer(int value);
 	static QColor getSoundVisualizerMinColor();
 	static void setSoundVisualizerMinColor(QColor color);
 	static QColor getSoundVisualizerMaxColor();
@@ -226,9 +262,10 @@ public:
 	static QString getAutoUpdatingVersion();
 	static void setAutoUpdatingVersion(const QString & version);
 
-private:		
+private:
 	static int getValidDeviceRefreshDelay(int value);
 	static int getValidDeviceBrightness(int value);
+	static int getValidDeviceBrightnessCap(int value);
 	static int getValidDeviceSmooth(int value);
 	static int getValidDeviceColorDepth(int value);
 	static double getValidDeviceGamma(double value);
@@ -268,6 +305,7 @@ signals:
 	void keepLightsOnAfterExitChanged(bool isEnabled);
 	void keepLightsOnAfterLockChanged(bool isEnabled);
 	void keepLightsOnAfterSuspendChanged(bool isEnabled);
+	void keepLightsOnAfterScreenOffChanged(bool isEnabled);
 	void pingDeviceEverySecondEnabledChanged(bool);
 
 	void languageChanged(const QString &);
@@ -277,23 +315,53 @@ signals:
 	void hotkeyChanged(const QString &actionName, const QKeySequence & newKeySequence, const QKeySequence &oldKeySequence);
 	void adalightSerialPortNameChanged(const QString & port);
 	void adalightSerialPortBaudRateChanged(const QString & baud);
+	void adalightLedMilliAmpsChanged(const int mAmps);
+	void adalightPowerSupplyAmpsChanged(const double amps);
 	void ardulightSerialPortNameChanged(const QString & port);
 	void ardulightSerialPortBaudRateChanged(const QString & baud);
+	void ardulightLedMilliAmpsChanged(const int mAmps);
+	void ardulightPowerSupplyAmpsChanged(const double amps);
+	void drgbAddressChanged(const QString& address);
+	void drgbPortChanged(const QString& port);
+	void drgbTimeoutChanged(const int timeout);
+	void drgbLedMilliAmpsChanged(const int mAmps);
+	void drgbPowerSupplyAmpsChanged(const double amps);
+	void dnrgbAddressChanged(const QString& address);
+	void dnrgbPortChanged(const QString& port);
+	void dnrgbTimeoutChanged(const int timeout);
+	void dnrgbLedMilliAmpsChanged(const int mAmps);
+	void dnrgbPowerSupplyAmpsChanged(const double amps);
+	void warlsAddressChanged(const QString& address);
+	void warlsPortChanged(const QString& port);
+	void warlsTimeoutChanged(const int timeout);
+	void warlsLedMilliAmpsChanged(const int mAmps);
+	void warlsPowerSupplyAmpsChanged(const double amps);
 	void lightpackNumberOfLedsChanged(int numberOfLeds);
+	void lightpackLedMilliAmpsChanged(const int mAmps);
+	void lightpackPowerSupplyAmpsChanged(const double amps);
 	void adalightNumberOfLedsChanged(int numberOfLeds);
 	void ardulightNumberOfLedsChanged(int numberOfLeds);
+	void drgbNumberOfLedsChanged(int numberOfLeds);
+	void dnrgbNumberOfLedsChanged(int numberOfLeds);
+	void warlsNumberOfLedsChanged(int numberOfLeds);
 	void virtualNumberOfLedsChanged(int numberOfLeds);
+	void virtualLedMilliAmpsChanged(const int mAmps);
+	void virtualPowerSupplyAmpsChanged(const double amps);
 	void grabSlowdownChanged(int value);
 	void backlightEnabledChanged(bool isEnabled);
 	void grabAvgColorsEnabledChanged(bool isEnabled);
 	void grabOverBrightenChanged(int value);
-	void grabApplyGammaRampChanged(bool isEnabled);
+	void grabApplyBlueLightReductionChanged(bool isEnabled);
+	void grabApplyColorTemperatureChanged(bool isEnabled);
+	void grabColorTemperatureChanged(int value);
+	void grabGammaChanged(double value);
 	void sendDataOnlyIfColorsChangesChanged(bool isEnabled);
 	void luminosityThresholdChanged(int value);
 	void minimumLuminosityEnabledChanged(bool value);
 	void deviceRefreshDelayChanged(int value);
 	void deviceUsbPowerLedDisabledChanged(bool isDisabled);
 	void deviceBrightnessChanged(int value);
+	void deviceBrightnessCapChanged(int value);
 	void deviceSmoothChanged(int value);
 	void deviceColorDepthChanged(int value);
 	void deviceGammaChanged(double gamma);
@@ -307,8 +375,10 @@ signals:
 	void moodLampLiquidModeChanged(bool isLiquidMode);
 	void moodLampColorChanged(const QColor color);
 	void moodLampSpeedChanged(int value);
-#ifdef BASS_SOUND_SUPPORT
+	void moodLampLampChanged(int value);
+#ifdef SOUNDVIZ_SUPPORT
 	void soundVisualizerDeviceChanged(int value);
+	void soundVisualizerVisualizerChanged(int value);
 	void soundVisualizerMinColorChanged(const QColor color);
 	void soundVisualizerMaxColorChanged(const QColor color);
 	void soundVisualizerLiquidModeChanged(bool isLiquidMode);
@@ -329,5 +399,7 @@ private:
 	static Settings *m_this;
 	static QMap<SupportedDevices::DeviceType, QString> m_devicesTypeToNameMap;
 	static QMap<SupportedDevices::DeviceType, QString> m_devicesTypeToKeyNumberOfLedsMap;
+	static QMap<SupportedDevices::DeviceType, QString> m_devicesTypeToKeyLedMilliAmpsMap;
+	static QMap<SupportedDevices::DeviceType, QString> m_devicesTypeToKeyPowerSupplyAmpsMap;
 };
 } /*SettingsScope*/

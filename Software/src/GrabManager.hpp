@@ -34,6 +34,8 @@ class GrabberContext;
 class TimeEvaluations;
 class D3D10Grabber;
 
+namespace BlueLightReduction { class Client; };
+
 class GrabManager : public QObject
 {
 	Q_OBJECT
@@ -61,13 +63,18 @@ public slots:
 	void onGrabSlowdownChanged(int ms);
 	void onGrabAvgColorsEnabledChanged(bool state);
 	void onGrabOverBrightenChanged(int value);
-	void onGrabApplyGammaRampChanged(bool state);
+	void onGrabApplyBlueLightReductionChanged(bool state);
+	void onGrabApplyColorTemperatureChanged(bool state);
+	void onGrabColorTemperatureChanged(int value);
+	void onGrabGammaChanged(double value);
 	void onSendDataOnlyIfColorsEnabledChanged(bool state);
 #ifdef D3D10_GRAB_SUPPORT
 	void onDx1011GrabberEnabledChanged(bool state);
 	void onDx9GrabberEnabledChanged(bool state);
 #endif
 	void start(bool isGrabEnabled);
+	void ledDeviceCallSuccess(bool isSuccess);
+	void ledDeviceOpenSuccess(bool isSuccess);
 	void settingsProfileChanged(const QString &profileName);
 	void setVisibleLedWidgets(bool state);
 	void setColoredLedWidgets(bool state);
@@ -106,6 +113,8 @@ private:
 	D3D10Grabber *m_d3d10Grabber;
 #endif
 
+	BlueLightReduction::Client* m_blueLightClient;
+
 	QTimer *m_timerUpdateFPS;
 	QTimer *m_timerFakeGrab;
 	QWidget *m_parentWidget;
@@ -124,8 +133,12 @@ private:
 	bool m_isSendDataOnlyIfColorsChanged;
 	bool m_avgColorsOnAllLeds;
 	bool m_isGrabbingStarted;
+	bool m_isGrabbingSuspendedDueToDeviceError;
 	int m_overBrighten;
-	bool m_isApplyGammaRamp;
+	bool m_isApplyBlueLightReduction;
+	bool m_isApplyColorTemperature;
+	double m_gamma;
+	int m_colorTemperature;
 
 	int m_grabCountThisInterval;
 	int m_grabCountLastInterval;

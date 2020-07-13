@@ -25,6 +25,7 @@
 
 #include "PrismatikMath.hpp"
 #include <algorithm>
+#include <climits>
 #include "../src/debug.h"
 
 namespace PrismatikMath
@@ -68,6 +69,17 @@ namespace PrismatikMath
 		if (eRgb.b > max) eRgb.b = max;
 	}
 
+	void applyColorTemperature(QList<QRgb>& colors, const quint16 colorTemperature, double gamma) {
+		StructRgb wp = whitePoint(colorTemperature);
+		gamma = 1.0 / gamma; // encoding
+		for (QRgb& color : colors)
+		{
+			quint8 r = ::pow((qRed(color)   * wp.r) / (double)USHRT_MAX, gamma) * UCHAR_MAX;
+			quint8 g = ::pow((qGreen(color) * wp.g) / (double)USHRT_MAX, gamma) * UCHAR_MAX;
+			quint8 b = ::pow((qBlue(color)  * wp.b) / (double)USHRT_MAX, gamma) * UCHAR_MAX;
+			color = qRgb(r, g, b);
+		}
+	}
 
 
 	int getValueHSV(const QRgb rgb) {
@@ -126,6 +138,44 @@ namespace PrismatikMath
 		if (b < 0) b = 0;
 
 		return qRgb(r,g,b);
+	}
+
+	StructRgb whitePoint(const quint16 colorTemperature) {
+		// math from http://www.zombieprototypes.com/?p=210
+		// also http://www.tannerhelland.com/4435/convert-temperature-rgb-algorithm-code/
+		// and OG data for reference http://www.vendian.org/mncharity/dir3/blackbody/UnstableURLs/bbr_color.html
+		StructRgb result;
+		quint8 ct;
+
+		if (colorTemperature >= 6600) {
+			ct = colorTemperature / 100 - 55;
+			result.r = (351.97690566805693 + ct * 0.114206453784165 + -40.25366309332127 * std::log(ct));
+		}
+		else
+			result.r = 255;
+
+		if (colorTemperature < 6600) {
+			ct = colorTemperature / 100 - 2;
+			result.g = (-155.25485562709179 + ct * -0.44596950469579133 + 104.49216199393888 * std::log(ct));
+		}
+		else if (colorTemperature >= 6600) {
+			ct = colorTemperature / 100 - 50;
+			result.g = (325.4494125711974 + ct * 0.07943456536662342 + -28.0852963507957 * std::log(ct));
+		}
+		else
+			result.g = 255;
+
+
+		if (colorTemperature < 2000)
+			result.b = 0;
+		else if (colorTemperature > 6600)
+			result.b = 255;
+		else {
+			ct = colorTemperature / 100 - 10;
+			result.b = (-254.76935184120902 + ct * 0.8274096064007395 + 115.67994401066147 * std::log(ct));
+		}
+
+		return result;
 	}
 
 	StructRgb avgColor(const QList<StructRgb> &colors) {
@@ -278,5 +328,19 @@ namespace PrismatikMath
 
 	StructRgb toRgb(const StructLab &lab) {
 		return toRgb(toXyz(lab));
+	}
+
+	quint8 getBrightness(const QRgb rgb) {
+		return static_cast<quint8>(qRed(rgb) * 0.299 + qGreen(rgb) * 0.587 + qBlue(rgb) * 0.114);
+	}
+
+	double theoreticalMaxFrameRate(const double ledCount, const double baudRate) {
+		// math credit https://www.partsnotincluded.com/calculating-adalight-framerate-limits/
+		return pow((10.0 * (3.0 * ledCount + 6.0)) / baudRate + 0.00003 * ledCount, -1.0);
+	}
+
+	double theoreticalMinBaudRate(const double ledCount, const double frameRate) {
+		// derived from theoreticalMaxFrameRate()
+		return (30.0 * ledCount + 60) / (1.0 / frameRate - 0.00003 * ledCount);
 	}
 }

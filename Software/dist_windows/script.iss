@@ -65,9 +65,11 @@ Source: "content/prismatik-hooks32.dll"; DestDir: "{app}"; MinVersion: 6.1.7600;
 Source: "content/prismatik-unhook32.dll"; DestDir: "{app}"; MinVersion: 6.1.7600; Flags: 32bit ignoreversion
 Source: "content/UpdateElevate.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "content/platforms/*"; DestDir: "{app}\platforms"; Flags: ignoreversion
+Source: "content/styles/*"; DestDir: "{app}\styles"; Flags: ignoreversion
 Source: "content/Plugins/*"; DestDir: "{#UserSettingsDirName}\Plugins"; Flags: onlyifdoesntexist createallsubdirs recursesubdirs
-Source: "content/ssleay32.dll"; DestDir: "{app}"; Flags: ignoreversion
-Source: "content/libeay32.dll"; DestDir: "{app}"; Flags: ignoreversion
+; Use ssleay32.dll and libeay32.dll here for OpenSSL < 1.1
+Source: "content/libcrypto-1_1-x64.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "content/libssl-1_1-x64.dll"; DestDir: "{app}"; Flags: ignoreversion
 ; These are needed only when including the bass library for sound visualization
 Source: "content/bass.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "content/basswasapi.dll"; DestDir: "{app}"; Flags: ignoreversion
@@ -109,8 +111,8 @@ russian.CreateStartupIcon=Добавить в папку запуска
 english.CreateStartupIcon=Add to startup folder
 
 ; Admin task name
-russian.CreateAdminStartupTask =Автоматический запуск с правами администратора
-english.CreateAdminStartupTask =Automatically launch with admin rights
+russian.CreateAdminStartupTask =Автоматический запуск с правами администратора (Не рекомендуется)
+english.CreateAdminStartupTask =Automatically launch with admin rights (not recommended)
 
 ; Uninstall name
 russian.RemoveOnly =(удалить только)

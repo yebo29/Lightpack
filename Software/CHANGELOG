@@ -13,6 +13,59 @@ _/_/_/_/  _/    _/_/_/  _/    _/      _/_/  _/_/_/      _/_/_/    _/_/_/  _/    
 #    Software changelog
 ===================================================================================
 
+Version 5.11.2.23
+---------------
+May 29, 2020
+
+* Reduce CPU load using SSE/AVX
+* Fixes to Zone Distributors
+* Tweaks for MacOS grabbing
+* Fix Windows Night Light detection
+* Slowed gamma ramp memory leak (Windows)
+
+Version 5.11.2.22
+---------------
+March 29, 2020
+
+* Support for UDP devices (WARLS, DRGB, DNRGB)
+* Pulseaudio Sound Visualizer
+* Tweaks for Adalight/Adrulight devices
+
+Version 5.11.2.21
+---------------
+January 26, 2020
+
+* Updated self-updater to avoid antivirus false positives (#292)
+
+Version 5.11.2.20
+---------------
+January 20, 2020
+
+* Add new moodlights modes
+* Stop grabbing when device is disconnected (#248)
+* DDupl: handle portrait mode (#253)
+
+Version 5.11.2.19
+---------------
+January 19, 2019
+
+* Fix a crash when using DDupl grabber (#240)
+* Do not retry autoupdates
+
+Version 5.11.2.18
+---------------
+January 18, 2019
+
+* MacOS AV Grabber (#210)
+* Sound Visualizer for MacOS
+* Windows 10 Night Light and MacOS support (#177)
+* Improved DDupl grabbing performance
+* SessionChangeDetector for MacOS (#82)
+* Detect display sleep on Windows (#147)
+* Twin Peaks sound visualizer
+* Grab timing fix (#120)
+* Re-launching opens Settings Window (#142)
+
 Version 5.11.2.17
 ---------------
 April 26, 2018

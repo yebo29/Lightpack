@@ -34,7 +34,7 @@
 #include "PluginsManager.hpp"
 #include "wizard/Wizard.hpp"
 #include "Plugin.hpp"
-#include "SessionChangeDetector.hpp"
+#include "SystemSession.hpp"
 #include "LightpackCommandLineParser.hpp"
 
 #ifdef Q_OS_WIN
@@ -86,6 +86,11 @@ LightpackApplication::~LightpackApplication()
 	m_apiServerThread = NULL;
 	delete m_grabManager;
 	m_grabManager = NULL;
+#ifdef SOUNDVIZ_SUPPORT
+	if (m_soundManager)
+		delete m_soundManager;
+	m_soundManager = NULL;
+#endif// SOUNDVIZ_SUPPORT
 	delete m_moodlampManager;
 	m_moodlampManager = NULL;
 
@@ -161,7 +166,7 @@ void LightpackApplication::initializeAll(const QString & appDirPath)
 
 	initGrabManager();
 
-	if (!m_noGui)
+	if (!m_noGui && m_settingsWindow)
 	{
 		connect(m_settingsWindow, SIGNAL(backlightStatusChanged(Backlight::Status)), this, SLOT(setStatusChanged(Backlight::Status)));
 		m_settingsWindow->startBacklight();
@@ -173,11 +178,14 @@ void LightpackApplication::initializeAll(const QString & appDirPath)
 
 	startPluginManager();
 
-	QSharedPointer<SessionChangeDetector> sessionChangeDetector(new SessionChangeDetector());
-	connect(sessionChangeDetector.data(), SIGNAL(sessionChangeDetected(int)), this, SLOT(onSessionChange(int)));
-	connect(sessionChangeDetector.data(), SIGNAL(sessionChangeDetected(int)), m_grabManager, SIGNAL(onSessionChange(int)));
-	m_EventFilters.push_back(sessionChangeDetector);
-
+    SystemSession::EventFilter* eventFilter = SystemSession::EventFilter::create();
+    if (eventFilter)
+    {
+        QSharedPointer<SystemSession::EventFilter> sessionChangeDetector(eventFilter);
+        connect(sessionChangeDetector.data(), SIGNAL(sessionChangeDetected(int)), this, SLOT(onSessionChange(int)));
+        connect(sessionChangeDetector.data(), SIGNAL(sessionChangeDetected(int)), m_grabManager, SIGNAL(onSessionChange(int)));
+        m_EventFilters.push_back(sessionChangeDetector);
+    }
 	for (EventFilters::const_iterator it = m_EventFilters.begin(); it != m_EventFilters.end(); ++it)
 		this->installNativeEventFilter(it->data());
 
@@ -219,7 +227,7 @@ void LightpackApplication::setBacklightChanged(Lightpack::Mode mode)
 {
 	DEBUG_LOW_LEVEL << Q_FUNC_INFO << mode;
 	Settings::setLightpackMode(mode);
-	if (!m_noGui)
+	if (!m_noGui && m_settingsWindow)
 		m_settingsWindow->setModeChanged(mode);
 
 	// In ApiPersist mode, we keep the colors left behind by API until the Backlight is restarted by some action
@@ -258,24 +266,27 @@ void LightpackApplication::startBacklight()
 	case Lightpack::AmbilightMode:
 		m_grabManager->start(isCanStart);
 		m_moodlampManager->start(false);
-#ifdef BASS_SOUND_SUPPORT
-		m_soundManager->start(false);
+#ifdef SOUNDVIZ_SUPPORT
+		if (m_soundManager)
+			m_soundManager->start(false);
 #endif
 		break;
 
 	case Lightpack::MoodLampMode:
 		m_grabManager->start(false);
 		m_moodlampManager->start(isCanStart);
-#ifdef BASS_SOUND_SUPPORT
-		m_soundManager->start(false);
+#ifdef SOUNDVIZ_SUPPORT
+		if (m_soundManager)
+			m_soundManager->start(false);
 #endif
 		break;
 
-#ifdef BASS_SOUND_SUPPORT
+#ifdef SOUNDVIZ_SUPPORT
 	case Lightpack::SoundVisualizeMode:
 		m_grabManager->start(false);
 		m_moodlampManager->start(false);
-		m_soundManager->start(isCanStart);
+		if (m_soundManager)
+			m_soundManager->start(isCanStart);
 		break;
 #endif
 
@@ -330,7 +341,7 @@ void LightpackApplication::onSessionChange(int change)
 {
 	switch (change)
 	{
-		case SessionChangeDetector::SessionChange::Ending:
+		case SystemSession::Status::Ending:
 			if (!SettingsScope::Settings::isKeepLightsOnAfterExit())
 			{
 				// Process all currently pending signals (which may include updating the color signals)
@@ -340,42 +351,63 @@ void LightpackApplication::onSessionChange(int change)
 				QApplication::processEvents(QEventLoop::AllEvents, 500);
 			}
 			break;
-		case SessionChangeDetector::SessionChange::Locking:
+		case SystemSession::Status::Locking:
 			if (!m_isSessionLocked)
-				m_isLightsWereOn = m_backlightStatus;
+				m_isLightsWereOnBeforeLock = m_backlightStatus && !m_isLightsTurnedOffBySessionChange;
 
 			if (!SettingsScope::Settings::isKeepLightsOnAfterLock())
 			{
 				getLightpackApp()->settingsWnd()->switchOffLeds();
+				m_isLightsTurnedOffBySessionChange = true;
 			}
 			m_isSessionLocked = true;
 			break;
-		case SessionChangeDetector::SessionChange::Unlocking:
-			if (!SettingsScope::Settings::isKeepLightsOnAfterLock() && m_isLightsWereOn)
+		case SystemSession::Status::Unlocking:
+			if (m_isSessionLocked && !SettingsScope::Settings::isKeepLightsOnAfterLock() && m_isLightsWereOnBeforeLock)
 			{
 				getLightpackApp()->settingsWnd()->switchOnLeds();
+				m_isLightsTurnedOffBySessionChange = false;
 			}
 			m_isSessionLocked = false;
 			break;
-		case SessionChangeDetector::SessionChange::Sleeping:
-			if (!m_isSessionLocked)
-				m_isLightsWereOn = m_backlightStatus;
+		case SystemSession::Status::Sleeping:
+			if (!m_isSuspending)
+				m_isLightsWereOnBeforeSuspend = m_backlightStatus && !m_isLightsTurnedOffBySessionChange;
 
 			if (!SettingsScope::Settings::isKeepLightsOnAfterSuspend())
 			{
 				getLightpackApp()->settingsWnd()->switchOffLeds();
+				m_isLightsTurnedOffBySessionChange = true;
 			}
+			m_isSuspending = true;
 			break;
-		case SessionChangeDetector::SessionChange::Resuming:
-			if (!SettingsScope::Settings::isKeepLightsOnAfterSuspend())
+		case SystemSession::Status::Resuming:
+			if (m_isSuspending && !SettingsScope::Settings::isKeepLightsOnAfterSuspend() && m_isLightsWereOnBeforeSuspend)
 			{
-				if ((!m_isSessionLocked || SettingsScope::Settings::isKeepLightsOnAfterLock()) && m_isLightsWereOn)
-				{
-					getLightpackApp()->settingsWnd()->switchOnLeds();
-				}
+				getLightpackApp()->settingsWnd()->switchOnLeds();
+				m_isLightsTurnedOffBySessionChange = false;
 			}
-
+			m_isSuspending = false;
 			QMetaObject::invokeMethod(m_ledDeviceManager, "updateDeviceSettings", Qt::QueuedConnection);
+			break;
+		case SystemSession::Status::DisplayOff:
+			if (!m_isDisplayOff)
+				m_isLightsWereOnBeforeDisplaySleep = m_backlightStatus && !m_isLightsTurnedOffBySessionChange;
+
+			if (!SettingsScope::Settings::isKeepLightsOnAfterScreenOff())
+			{
+				getLightpackApp()->settingsWnd()->switchOffLeds();
+				m_isLightsTurnedOffBySessionChange = true;
+			}
+			m_isDisplayOff = true;
+			break;
+		case SystemSession::Status::DisplayOn:
+			if (m_isDisplayOff && !SettingsScope::Settings::isKeepLightsOnAfterScreenOff() && m_isLightsWereOnBeforeDisplaySleep)
+			{
+				getLightpackApp()->settingsWnd()->switchOnLeds();
+				m_isLightsTurnedOffBySessionChange = false;
+			}
+			m_isDisplayOff = false;
 			break;
 	}
 }
@@ -561,7 +593,7 @@ void LightpackApplication::startApiServer()
 	connect(m_ledDeviceManager, SIGNAL(ledDeviceSetGamma(double)),					m_pluginInterface, SLOT(updateGammaCache(double)),					Qt::QueuedConnection);
 	connect(m_ledDeviceManager, SIGNAL(ledDeviceSetBrightness(int)),				m_pluginInterface, SLOT(updateBrightnessCache(int)),				Qt::QueuedConnection);
 
-#ifdef BASS_SOUND_SUPPORT
+#ifdef SOUNDVIZ_SUPPORT
 	connect(settings(), SIGNAL(soundVisualizerMinColorChanged(QColor)), m_pluginInterface, SLOT(updateSoundVizMinColorCache(QColor)), Qt::QueuedConnection);
 	connect(settings(), SIGNAL(soundVisualizerMaxColorChanged(QColor)), m_pluginInterface, SLOT(updateSoundVizMaxColorCache(QColor)), Qt::QueuedConnection);
 	connect(settings(), SIGNAL(soundVisualizerLiquidModeChanged(bool)), m_pluginInterface, SLOT(updateSoundVizLiquidCache(bool)), Qt::QueuedConnection);
@@ -615,14 +647,12 @@ void LightpackApplication::startLedDeviceManager()
 	connect(settings(), SIGNAL(deviceUsbPowerLedDisabledChanged(bool)), m_ledDeviceManager, SLOT(setUsbPowerLedDisabled(bool)),			Qt::QueuedConnection);
 	connect(settings(), SIGNAL(deviceGammaChanged(double)),				m_ledDeviceManager, SLOT(setGamma(double)),						Qt::QueuedConnection);
 	connect(settings(), SIGNAL(deviceBrightnessChanged(int)),			m_ledDeviceManager, SLOT(setBrightness(int)),					Qt::QueuedConnection);
-//	connect(settings(), SIGNAL(deviceColorSequenceChanged(QString)),	m_ledDeviceManager, SLOT(setColorSequence(QString)),			Qt::QueuedConnection);
+	connect(settings(), SIGNAL(deviceBrightnessCapChanged(int)),		m_ledDeviceManager, SLOT(setBrightnessCap(int)),				Qt::QueuedConnection);
 	connect(settings(), SIGNAL(luminosityThresholdChanged(int)),		m_ledDeviceManager, SLOT(setLuminosityThreshold(int)),			Qt::QueuedConnection);
 	connect(settings(), SIGNAL(minimumLuminosityEnabledChanged(bool)),	m_ledDeviceManager, SLOT(setMinimumLuminosityEnabled(bool)),	Qt::QueuedConnection);
 	connect(settings(), SIGNAL(ledCoefBlueChanged(int,double)),			m_ledDeviceManager, SLOT(updateWBAdjustments()),				Qt::QueuedConnection);
 	connect(settings(), SIGNAL(ledCoefRedChanged(int,double)),			m_ledDeviceManager, SLOT(updateWBAdjustments()),				Qt::QueuedConnection);
 	connect(settings(), SIGNAL(ledCoefGreenChanged(int,double)),		m_ledDeviceManager, SLOT(updateWBAdjustments()),				Qt::QueuedConnection);
-
-//	connect(settingsObj, SIGNAL(settingsProfileChanged()),		m_ledDeviceManager, SLOT(updateDeviceSettings()), Qt::QueuedConnection);
 
 
 	if (!m_noGui)
@@ -673,16 +703,22 @@ void LightpackApplication::initGrabManager()
 	m_moodlampManager = new MoodLampManager(NULL);
 	m_moodlampManager->initFromSettings();
 
-#ifdef BASS_SOUND_SUPPORT
-	m_soundManager = new SoundManager(m_settingsWindow->winId(), NULL);
-	m_soundManager->initFromSettings();
+#ifdef SOUNDVIZ_SUPPORT
+	m_soundManager = SoundManagerBase::create((!m_noGui && m_settingsWindow) ? m_settingsWindow->winId() : 0, NULL);
+	if (m_soundManager)
+		m_soundManager->initFromSettings();
+	else
+		qWarning() << Q_FUNC_INFO << "No compatible Sound Manager";
 #endif
-	
+
 	connect(settings(), SIGNAL(grabberTypeChanged(const Grab::GrabberType &)),	m_grabManager,		SLOT(onGrabberTypeChanged(const Grab::GrabberType &)),	Qt::QueuedConnection);
 	connect(settings(), SIGNAL(grabSlowdownChanged(int)),						m_grabManager,		SLOT(onGrabSlowdownChanged(int)),						Qt::QueuedConnection);
 	connect(settings(), SIGNAL(grabAvgColorsEnabledChanged(bool)),				m_grabManager,		SLOT(onGrabAvgColorsEnabledChanged(bool)),				Qt::QueuedConnection);
 	connect(settings(), SIGNAL(grabOverBrightenChanged(int)),					m_grabManager,		SLOT(onGrabOverBrightenChanged(int)),					Qt::QueuedConnection);
-	connect(settings(), SIGNAL(grabApplyGammaRampChanged(bool)),				m_grabManager,		SLOT(onGrabApplyGammaRampChanged(bool)),				Qt::QueuedConnection);
+	connect(settings(), SIGNAL(grabApplyBlueLightReductionChanged(bool)),				m_grabManager,		SLOT(onGrabApplyBlueLightReductionChanged(bool)),				Qt::QueuedConnection);
+	connect(settings(), SIGNAL(grabApplyColorTemperatureChanged(bool)),         m_grabManager,      SLOT(onGrabApplyColorTemperatureChanged(bool)),           Qt::QueuedConnection);
+	connect(settings(), SIGNAL(grabColorTemperatureChanged(int)),               m_grabManager,      SLOT(onGrabColorTemperatureChanged(int)),                 Qt::QueuedConnection);
+	connect(settings(), SIGNAL(grabGammaChanged(double)),                       m_grabManager,      SLOT(onGrabGammaChanged(double)),                         Qt::QueuedConnection);
 	connect(settings(), SIGNAL(sendDataOnlyIfColorsChangesChanged(bool)),		m_grabManager,		SLOT(onSendDataOnlyIfColorsEnabledChanged(bool)),		Qt::QueuedConnection);
 #ifdef D3D10_GRAB_SUPPORT
 	connect(settings(), SIGNAL(dx1011GrabberEnabledChanged(bool)),				m_grabManager,		SLOT(onDx1011GrabberEnabledChanged(bool)),				Qt::QueuedConnection);
@@ -692,28 +728,36 @@ void LightpackApplication::initGrabManager()
 	connect(settings(), SIGNAL(moodLampColorChanged(QColor)),					m_moodlampManager,	SLOT(setCurrentColor(QColor)));
 	connect(settings(), SIGNAL(moodLampSpeedChanged(int)),						m_moodlampManager,	SLOT(setLiquidModeSpeed(int)));
 	connect(settings(), SIGNAL(moodLampLiquidModeChanged(bool)),				m_moodlampManager,	SLOT(setLiquidMode(bool)));
+	connect(settings(), SIGNAL(moodLampLampChanged(int)),						m_moodlampManager,	SLOT(setCurrentLamp(int)));
+	connect(settings(), SIGNAL(sendDataOnlyIfColorsChangesChanged(bool)),		m_moodlampManager,	SLOT(setSendDataOnlyIfColorsChanged(bool)));
 
-#ifdef BASS_SOUND_SUPPORT
-	connect(settings(), SIGNAL(soundVisualizerDeviceChanged(int)),				m_soundManager,		SLOT(setDevice(int)));
-	connect(settings(), SIGNAL(soundVisualizerMaxColorChanged(QColor)),			m_soundManager,		SLOT(setMaxColor(QColor)));
-	connect(settings(), SIGNAL(soundVisualizerMinColorChanged(QColor)),			m_soundManager,		SLOT(setMinColor(QColor)));
-	connect(settings(), SIGNAL(soundVisualizerLiquidSpeedChanged(int)),			m_soundManager,		SLOT(setLiquidModeSpeed(int)));
-	connect(settings(), SIGNAL(soundVisualizerLiquidModeChanged(bool)),			m_soundManager,		SLOT(setLiquidMode(bool)));
+#ifdef SOUNDVIZ_SUPPORT
+	if (m_soundManager)
+	{
+		connect(settings(), SIGNAL(soundVisualizerDeviceChanged(int)),				m_soundManager,		SLOT(setDevice(int)));
+		connect(settings(), SIGNAL(soundVisualizerVisualizerChanged(int)),			m_soundManager,		SLOT(setVisualizer(int)));
+		connect(settings(), SIGNAL(soundVisualizerMaxColorChanged(QColor)),			m_soundManager,		SLOT(setMaxColor(QColor)));
+		connect(settings(), SIGNAL(soundVisualizerMinColorChanged(QColor)),			m_soundManager,		SLOT(setMinColor(QColor)));
+		connect(settings(), SIGNAL(soundVisualizerLiquidSpeedChanged(int)),			m_soundManager,		SLOT(setLiquidModeSpeed(int)));
+		connect(settings(), SIGNAL(soundVisualizerLiquidModeChanged(bool)),			m_soundManager,		SLOT(setLiquidMode(bool)));
+		connect(settings(), SIGNAL(sendDataOnlyIfColorsChangesChanged(bool)),		m_soundManager,		SLOT(setSendDataOnlyIfColorsChanged(bool)));
 
-	connect(m_pluginInterface, SIGNAL(updateSoundVizMinColor(QColor)),			m_soundManager,		SLOT(setMinColor(QColor)),								Qt::QueuedConnection);
-	connect(m_pluginInterface, SIGNAL(updateSoundVizMaxColor(QColor)),			m_soundManager,		SLOT(setMaxColor(QColor)),								Qt::QueuedConnection);
-	connect(m_pluginInterface, SIGNAL(updateSoundVizLiquid(bool)),				m_soundManager,		SLOT(setLiquidMode(bool)),								Qt::QueuedConnection);
+		connect(m_pluginInterface, SIGNAL(updateSoundVizMinColor(QColor)),			m_soundManager,		SLOT(setMinColor(QColor)),								Qt::QueuedConnection);
+		connect(m_pluginInterface, SIGNAL(updateSoundVizMaxColor(QColor)),			m_soundManager,		SLOT(setMaxColor(QColor)),								Qt::QueuedConnection);
+		connect(m_pluginInterface, SIGNAL(updateSoundVizLiquid(bool)),				m_soundManager,		SLOT(setLiquidMode(bool)),								Qt::QueuedConnection);
+	}
 #endif
 
 	connect(settings(), SIGNAL(currentProfileInited(const QString &)),			m_grabManager,		SLOT(settingsProfileChanged(const QString &)),			Qt::QueuedConnection);
 
 	connect(settings(), SIGNAL(currentProfileInited(const QString &)),			m_moodlampManager,	SLOT(settingsProfileChanged(const QString &)),			Qt::QueuedConnection);
-#ifdef BASS_SOUND_SUPPORT
-	connect(settings(), SIGNAL(currentProfileInited(const QString &)),			m_soundManager,		SLOT(settingsProfileChanged(const QString &)));
+#ifdef SOUNDVIZ_SUPPORT
+	if (m_soundManager)
+		connect(settings(), SIGNAL(currentProfileInited(const QString &)),			m_soundManager,		SLOT(settingsProfileChanged(const QString &)));
 #endif
 
 	// Connections to signals which will be connected to ILedDevice
-	if (!m_noGui)
+	if (!m_noGui && m_settingsWindow)
 	{
 		connect(m_settingsWindow, SIGNAL(showLedWidgets(bool)), this, SLOT(showLedWidgets(bool)));
 		connect(m_settingsWindow, SIGNAL(setColoredLedWidget(bool)), this, SLOT(setColoredLedWidget(bool)));
@@ -721,18 +765,34 @@ void LightpackApplication::initGrabManager()
 		// GrabManager to this
 		connect(m_grabManager, SIGNAL(ambilightTimeOfUpdatingColors(double)), m_settingsWindow, SLOT(refreshAmbilightEvaluated(double)));
 
-#ifdef BASS_SOUND_SUPPORT
-		connect(m_settingsWindow, SIGNAL(requestSoundVizDevices()), m_soundManager, SLOT(requestDeviceList()));
-		connect(m_soundManager, SIGNAL(deviceList(const QList<SoundManagerDeviceInfo> &, int)), m_settingsWindow, SLOT(updateAvailableSoundVizDevices(const QList<SoundManagerDeviceInfo> &, int)));
+#ifdef SOUNDVIZ_SUPPORT
+		if (m_soundManager) {
+			connect(m_settingsWindow, SIGNAL(requestSoundVizDevices()), m_soundManager, SLOT(requestDeviceList()));
+			connect(m_soundManager, SIGNAL(deviceList(const QList<SoundManagerDeviceInfo> &, int)), m_settingsWindow, SLOT(updateAvailableSoundVizDevices(const QList<SoundManagerDeviceInfo> &, int)));
+
+			connect(m_settingsWindow, SIGNAL(requestSoundVizVisualizers()), m_soundManager, SLOT(requestVisualizerList()));
+			connect(m_soundManager, SIGNAL(visualizerList(const QList<SoundManagerVisualizerInfo> &, int)), m_settingsWindow, SLOT(updateAvailableSoundVizVisualizers(const QList<SoundManagerVisualizerInfo> &, int)));
+		}
 #endif
+
+		connect(m_settingsWindow, SIGNAL(requestMoodLampLamps()), m_moodlampManager, SLOT(requestLampList()));
+		connect(m_moodlampManager, SIGNAL(lampList(const QList<MoodLampLampInfo> &, int)), m_settingsWindow, SLOT(updateAvailableMoodLampLamps(const QList<MoodLampLampInfo> &, int)));
 	}
 
 	connect(m_grabManager, SIGNAL(ambilightTimeOfUpdatingColors(double)), m_pluginInterface, SLOT(refreshAmbilightEvaluated(double)));
 
 	connect(m_grabManager,		SIGNAL(updateLedsColors(const QList<QRgb> &)),	m_ledDeviceManager, SLOT(setColors(QList<QRgb>)), Qt::QueuedConnection);
 	connect(m_moodlampManager,	SIGNAL(updateLedsColors(const QList<QRgb> &)),	m_ledDeviceManager, SLOT(setColors(QList<QRgb>)), Qt::QueuedConnection);
-#ifdef BASS_SOUND_SUPPORT
-	connect(m_soundManager,		SIGNAL(updateLedsColors(const QList<QRgb> &)),	m_ledDeviceManager, SLOT(setColors(QList<QRgb>)), Qt::QueuedConnection);
+	if (!m_noGui && m_settingsWindow)
+		connect(m_moodlampManager,	SIGNAL(moodlampFrametime(const double)),		m_settingsWindow, 	SLOT(refreshAmbilightEvaluated(double)), Qt::QueuedConnection);
+	connect(m_ledDeviceManager,	SIGNAL(openDeviceSuccess(bool)),				m_grabManager,		SLOT(ledDeviceOpenSuccess(bool)), Qt::QueuedConnection);
+	connect(m_ledDeviceManager,	SIGNAL(ioDeviceSuccess(bool)),					m_grabManager,		SLOT(ledDeviceCallSuccess(bool)), Qt::QueuedConnection);
+#ifdef SOUNDVIZ_SUPPORT
+	if (m_soundManager) {
+		connect(m_soundManager,		SIGNAL(updateLedsColors(const QList<QRgb> &)),	m_ledDeviceManager, SLOT(setColors(QList<QRgb>)), Qt::QueuedConnection);
+		if (!m_noGui && m_settingsWindow)
+			connect(m_soundManager,		SIGNAL(visualizerFrametime(const double)),	m_settingsWindow, SLOT(refreshAmbilightEvaluated(double)), Qt::QueuedConnection);
+	}
 #endif
 }
 
@@ -777,14 +837,16 @@ void LightpackApplication::settingsChanged()
 	m_moodlampManager->setCurrentColor(Settings::getMoodLampColor());
 	m_moodlampManager->setLiquidModeSpeed(Settings::getMoodLampSpeed());
 	m_moodlampManager->setLiquidMode(Settings::isMoodLampLiquidMode());
+	m_moodlampManager->setCurrentLamp(Settings::getMoodLampLamp());
 
 	bool isBacklightEnabled = Settings::isBacklightEnabled();
 	bool isCanStart = (isBacklightEnabled && m_deviceLockStatus == DeviceLocked::Unlocked);
 
 //	numberOfLedsChanged(Settings::getNumberOfLeds(Settings::getConnectedDevice()));
 
-#ifdef BASS_SOUND_SUPPORT
-	m_soundManager->setSendDataOnlyIfColorsChanged(Settings::isSendDataOnlyIfColorsChanges());
+#ifdef SOUNDVIZ_SUPPORT
+	if (m_soundManager)
+		m_soundManager->setSendDataOnlyIfColorsChanged(Settings::isSendDataOnlyIfColorsChanges());
 #endif
 
 	switch (Settings::getLightpackMode())
@@ -792,24 +854,27 @@ void LightpackApplication::settingsChanged()
 	case Lightpack::AmbilightMode:
 		m_grabManager->start(isCanStart);
 		m_moodlampManager->start(false);
-#ifdef BASS_SOUND_SUPPORT
-		m_soundManager->start(false);
+#ifdef SOUNDVIZ_SUPPORT
+		if (m_soundManager)
+			m_soundManager->start(false);
 #endif
 		break;
 
-#ifdef BASS_SOUND_SUPPORT
+#ifdef SOUNDVIZ_SUPPORT
 	case Lightpack::SoundVisualizeMode:
 		m_grabManager->start(false);
 		m_moodlampManager->start(false);
-		m_soundManager->start(isCanStart);
+		if (m_soundManager)
+			m_soundManager->start(isCanStart);
 		break;
 #endif
 
 	default:
 		m_grabManager->start(false);
 		m_moodlampManager->start(isCanStart);
-#ifdef BASS_SOUND_SUPPORT
-		m_soundManager->start(false);
+#ifdef SOUNDVIZ_SUPPORT
+		if (m_soundManager)
+			m_soundManager->start(false);
 #endif
 		break;
 	}
@@ -817,8 +882,9 @@ void LightpackApplication::settingsChanged()
 	//Force update colors on device for start ping device
 	m_grabManager->reset();
 	m_moodlampManager->reset();
-#ifdef BASS_SOUND_SUPPORT
-	m_soundManager->reset();
+#ifdef SOUNDVIZ_SUPPORT
+	if (m_soundManager)
+		m_soundManager->reset();
 #endif
 
 }

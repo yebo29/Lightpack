@@ -32,26 +32,32 @@
 #include "enums.hpp"
 
 #ifdef ALIEN_FX_SUPPORTED
-#	define SUPPORTED_DEVICES			"Lightpack,AlienFx,Adalight,Ardulight,Virtual"
+#	define SUPPORTED_DEVICES			"Lightpack,AlienFx,Adalight,Ardulight,Virtual,DRGB,DNRGB,WARLS"
 #else
-#	define SUPPORTED_DEVICES			"Lightpack,Adalight,Ardulight,Virtual"
+#	define SUPPORTED_DEVICES			"Lightpack,Adalight,Ardulight,Virtual,DRGB,DNRGB,WARLS"
 #endif
 
+#define _GRABMODE_ENUM(_name_)		::Grab::GrabberType##_name_
+#define _GRABMODE_STR(_name_)		#_name_
+
 #ifdef DDUPL_GRAB_SUPPORT
-#	define GRABMODE_DEFAULT			::Grab::GrabberTypeDDupl
-#	define GRABMODE_DEFAULT_STR		"DDupl"
+#	define GRABMODE_DEFAULT			_GRABMODE_ENUM(DDupl)
+#	define GRABMODE_DEFAULT_STR		_GRABMODE_STR(DDupl)
 #elif defined(WINAPI_GRAB_SUPPORT)
-#	define GRABMODE_DEFAULT			::Grab::GrabberTypeWinAPI
-#	define GRABMODE_DEFAULT_STR		"WinAPI"
+#	define GRABMODE_DEFAULT			_GRABMODE_ENUM(WinAPI)
+#	define GRABMODE_DEFAULT_STR		_GRABMODE_STR(WinAPI)
 #elif defined(X11_GRAB_SUPPORT)
-#	define GRABMODE_DEFAULT			::Grab::GrabberTypeX11
-#	define GRABMODE_DEFAULT_STR		"X11"
+#	define GRABMODE_DEFAULT			_GRABMODE_ENUM(X11)
+#	define GRABMODE_DEFAULT_STR		_GRABMODE_STR(X11)
+#elif defined(MAC_OS_AV_GRAB_SUPPORT)
+#	define GRABMODE_DEFAULT			_GRABMODE_ENUM(MacAVFoundation)
+#	define GRABMODE_DEFAULT_STR		_GRABMODE_STR(MacAVFoundation)
 #elif defined(MAC_OS_CG_GRAB_SUPPORT)
-#	define GRABMODE_DEFAULT			::Grab::GrabberTypeMacCoreGraphics
-#	define GRABMODE_DEFAULT_STR		"MacCoreGraphics"
+#	define GRABMODE_DEFAULT			_GRABMODE_ENUM(MacCoreGraphics)
+#	define GRABMODE_DEFAULT_STR		_GRABMODE_STR(MacCoreGraphics)
 #else
-#	define GRABMODE_DEFAULT			::Grab::GrabberTypeQt
-#	define GRABMODE_DEFAULT_STR		"Qt"
+#	define GRABMODE_DEFAULT			_GRABMODE_ENUM(Qt)
+#	define GRABMODE_DEFAULT_STR		_GRABMODE_STR(Qt)
 #endif
 
 #ifdef Q_OS_UNIX
@@ -69,11 +75,12 @@ namespace Main
 // [General]
 static const QString ProfileNameDefault = "Lightpack";
 static const QString LanguageDefault = "<System>";
-static const Debug::DebugLevels DebugLevelDefault = Debug::LowLevel;
+static const Debug::DebugLevels DebugLevelDefault = Debug::ZeroLevel;
 static const bool IsExpertModeEnabledDefault = false;
 static const bool IsKeepLightsOnAfterExit = false;
 static const bool IsKeepLightsOnAfterLock = true;
 static const bool IsKeepLightsOnAfterSuspend = false;
+static const bool IsKeepLightsOnAfterScreenOff = true;
 static const bool IsPingDeviceEverySecond = true;
 static const bool IsUpdateFirmwareMessageShown = false;
 static const QString ConnectedDeviceDefault = "Lightpack";
@@ -95,6 +102,11 @@ static const bool ListenOnlyOnLoInterfaceDefault = true;
 static const int PortDefault = 3636;
 static const QString AuthKey = "";
 // See ApiKey generation in Settings initialization
+}
+namespace Device
+{
+static const int LedMilliAmpsDefault = 50;
+static const double PowerSupplyAmpsDefault = 0.0;
 }
 namespace Adalight
 {
@@ -121,6 +133,27 @@ static const int NumberOfLedsDefault = 10;
 namespace Virtual
 {
 static const int NumberOfLedsDefault = 10;
+}
+namespace Drgb
+{
+static const int NumberOfLedsDefault = 10;
+static const QString AddressDefault = "127.0.0.1";
+static const QString PortDefault = "21324";
+static const int TimeoutDefault = 255;
+}
+namespace Dnrgb
+{
+static const int NumberOfLedsDefault = 10;
+static const QString AddressDefault = "127.0.0.1";
+static const QString PortDefault = "21324";
+static const int TimeoutDefault = 255;
+}
+namespace Warls
+{
+static const int NumberOfLedsDefault = 10;
+static const QString AddressDefault = "127.0.0.1";
+static const QString PortDefault = "21324";
+static const int TimeoutDefault = 255;
 }
 }
 
@@ -150,11 +183,19 @@ static const int LuminosityThresholdMax = 100;
 static const int OverBrightenMin = 0;
 static const int OverBrightenDefault = 0;
 static const int OverBrightenMax = 100;
-static const bool IsApplyGammaRampEnabledDefault = true;
+static const bool IsApplyBlueLightReductionEnabledDefault = true;
+static const bool IsApplyColorTemperatureEnabledDefault = false;
+static const int ColorTemperatureMin = 1000;
+static const int ColorTemperatureDefault = 6500;
+static const int ColorTemperatureMax = 10000;
+static const double GammaMin = 0.05;
+static const double GammaDefault = 1.2;
+static const double GammaMax = 10.0;
 }
 // [MoodLamp]
 namespace MoodLamp
 {
+static const int LampDefault = 0;
 static const int SpeedMin = 1;
 static const int SpeedDefault = 50;
 static const int SpeedMax = 100;
@@ -165,6 +206,7 @@ static const bool IsLiquidModeDefault = true;
 namespace SoundVisualizer
 {
 static const int DeviceDefault = -1;
+static const int VisualizerDefault = 0;
 static const QString MinColorDefault = "#301000";
 static const QString MaxColorDefault = "#0000FF";
 static const bool IsLiquidModeDefault = true;
@@ -184,6 +226,10 @@ static const bool IsUsbPowerLedDisabled = false;
 static const int BrightnessMin = 0;
 static const int BrightnessDefault = 100;
 static const int BrightnessMax = 100;
+
+static const int BrightnessCapMin = 1;
+static const int BrightnessCapDefault = 100;
+static const int BrightnessCapMax = 100;
 
 static const int SmoothMin = 0;
 static const int SmoothDefault = 100;

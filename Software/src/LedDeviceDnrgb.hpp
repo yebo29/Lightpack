@@ -1,8 +1,8 @@
 /*
- * EndSessionDetector.hpp
+ * LedDeviceDnrgb.hpp
  *
- *	Created on: 01.03.2014
- *		Author: EternalWind
+ *	Created on: 16.02.2020
+ *		Author: Tom Archer
  *		Project: Lightpack
  *
  *	Lightpack is very simple implementation of the backlight for a laptop
@@ -24,39 +24,27 @@
  *
  */
 
-#ifndef SESSION_CHANGE_DETECTOR
-#define SESSION_CHANGE_DETECTOR
-#include "QObject"
-#include "QAbstractNativeEventFilter"
+#pragma once
 
-class SessionChangeDetector :
-	public QObject,
-	public QAbstractNativeEventFilter
+#include "AbstractLedDeviceUdp.hpp"
+
+class LedDeviceDnrgb : public AbstractLedDeviceUdp
 {
 	Q_OBJECT
-
 public:
+    LedDeviceDnrgb(const QString& address, const QString& port, const int timeout, QObject * parent = 0);
 
-	enum SessionChange : int {
-		Ending,
-		Locking,
-		Unlocking,
-		Sleeping,
-		Resuming
-	};
+public slots:
+    const QString name() const;
+	void setColors(const QList<QRgb> & colors);
+	void switchOffLeds();
+    void requestFirmwareVersion();
+    int maxLedsCount();
 
-	SessionChangeDetector();
-
-	bool nativeEventFilter(const QByteArray& eventType, void* message, long* result) Q_DECL_OVERRIDE;
-
-	~SessionChangeDetector();
-
-signals:
-	void sessionChangeDetected(int change);
+protected:
+    void resizeColorsBuffer(int buffSize);
+    void reinitBufferHeader();
 
 private:
-	void Destroy();
-
-	bool m_isDestroyed;
+    const int LEDS_PER_PACKET = 489;
 };
-#endif

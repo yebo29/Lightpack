@@ -23,9 +23,9 @@ INCLUDEPATH += ./include \
                ../math/include \
                ..
 
-CONFIG(gcc):QMAKE_CXXFLAGS += -std=c++11
+QMAKE_CXXFLAGS += -std=c++17
 CONFIG(clang) {
-    QMAKE_CXXFLAGS += -std=c++11 -stdlib=libc++
+    QMAKE_CXXFLAGS += -stdlib=libc++
     LIBS += -stdlib=libc++
 }
 
@@ -40,9 +40,19 @@ unix:!macx {
 
 # Mac platform
 macx {
+    contains(DEFINES, MAC_OS_CG_GRAB_SUPPORT) || contains(DEFINES, MAC_OS_AV_GRAB_SUPPORT) {
+        GRABBERS_HEADERS += include/MacOSGrabberBase.hpp
+        GRABBERS_SOURCES += MacOSGrabberBase.mm
+    }
+
     contains(DEFINES, MAC_OS_CG_GRAB_SUPPORT) {
-        GRABBERS_HEADERS += include/MacOSGrabber.hpp
-        GRABBERS_SOURCES += MacOSGrabber.cpp
+        GRABBERS_HEADERS += include/MacOSCGGrabber.hpp
+        GRABBERS_SOURCES += MacOSCGGrabber.mm
+    }
+
+    contains(DEFINES, MAC_OS_AV_GRAB_SUPPORT) {
+        GRABBERS_HEADERS += include/MacOSAVGrabber.h
+        GRABBERS_SOURCES += MacOSAVGrabber.mm
     }
 }
 
@@ -69,24 +79,17 @@ HEADERS += \
     include/GrabberBase.hpp \
     include/ColorProvider.hpp \
     include/GrabberContext.hpp \
+    include/BlueLightReduction.hpp \
     $${GRABBERS_HEADERS}
 
 SOURCES += \
     calculations.cpp \
     GrabberBase.cpp \
     include/ColorProvider.cpp \
+    BlueLightReduction.cpp \
     $${GRABBERS_SOURCES}
 
 win32 {
-    !isEmpty( DIRECTX_SDK_DIR ) {
-        # This will suppress gcc warnings in DX headers.
-        CONFIG(gcc) {
-            QMAKE_CXXFLAGS += -isystem "\"$${DIRECTX_SDK_DIR}/Include\""
-        } else {
-            INCLUDEPATH += "\"$${DIRECTX_SDK_DIR}/Include\""
-        }
-    }
-
     CONFIG(msvc) {
         # This will suppress many MSVC warnings about 'unsecure' CRT functions.
         DEFINES += _CRT_SECURE_NO_WARNINGS _CRT_NONSTDC_NO_DEPRECATE
@@ -94,6 +97,13 @@ win32 {
         QMAKE_CXXFLAGS += /MP
         # Create "fake" project dependencies of the libraries used dynamically
         LIBS += -lprismatik-hooks -llibraryinjector -lprismatik-unhook
+    }
+
+    contains(DEFINES,NIGHTLIGHT_SUPPORT) {
+      contains(QMAKE_TARGET.arch, x86_64) {
+        Release:INCLUDEPATH += $${NIGHTLIGHT_DIR}/Release/
+        Debug:INCLUDEPATH += $${NIGHTLIGHT_DIR}/Debug/
+      }
     }
 
     HEADERS += \
@@ -110,10 +120,23 @@ macx {
 
     INCLUDEPATH += /System/Library/Frameworks
 
+    HEADERS += \
+            include/MacUtils.h
+    SOURCES += \
+            MacUtils.mm
+
     #LIBS += \
     #        -framework CoreGraphics
     #        -framework CoreFoundation
     #QMAKE_MAC_SDK = macosx10.8
+
+    QMAKE_CFLAGS += -mavx2
+    QMAKE_CXXFLAGS += -mavx2
+}
+
+unix:!macx {
+    QMAKE_CFLAGS += -mavx2
+    QMAKE_CXXFLAGS += -mavx2
 }
 
 OTHER_FILES += \

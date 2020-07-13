@@ -70,6 +70,7 @@ enum GrabberType {
 	GrabberTypeWinAPIEachWidget,
 	GrabberTypeD3D9,
 	GrabberTypeMacCoreGraphics,
+	GrabberTypeMacAVFoundation,
 	GrabberTypeDDupl,
 
 	GrabbersCount,
@@ -86,6 +87,9 @@ enum DeviceType {
 	DeviceTypeAdalight,
 	DeviceTypeVirtual,
 	DeviceTypeArdulight,
+	DeviceTypeDrgb,
+	DeviceTypeDnrgb,
+	DeviceTypeWarls,
 
 	DeviceTypesCount,
 	DefaultDeviceType = DeviceTypeLightpack
@@ -94,20 +98,34 @@ enum DeviceType {
 
 namespace MaximumNumberOfLeds
 {
+	// make sure to update SelectDevicePage.ui to reflect limits
 enum Devices
 {
-	AbsoluteMaximum = 511,
-
 	Adalight	= 511,
 	Ardulight	= 255,
 	AlienFx		= 1,
 	Virtual		= 511,
+	Drgb        = 490,
+	Dnrgb       = 1500,
+	Warls       = 255,
 
 	Lightpack4	= 8,
 	Lightpack5	= 10,
 	Lightpack6	= 10,
 
-	Default		= 10
+	Default		= Lightpack6,
+
+	AbsoluteMaximum = Dnrgb
+};
+}
+
+namespace UdpDevice
+{
+enum Protocol
+{
+	Warls = 1,
+	Drgb  = 2,
+	Dnrgb = 4
 };
 }
 
@@ -153,6 +171,7 @@ enum Cmd {
 	SetSmoothSlowdown,
 	SetGamma,
 	SetBrightness,
+	SetBrightnessCap,
 	SetLuminosityThreshold,
 	SetMinimumLuminosityEnabled,
 	SetColorSequence,

@@ -27,6 +27,7 @@
 #include "GrabWidget.hpp"
 #include "GrabberBase.hpp"
 #include "src/debug.h"
+#include <cmath>
 
 namespace
 {
@@ -58,6 +59,7 @@ GrabberBase::GrabberBase(QObject *parent, GrabberContext *grabberContext) : QObj
 	if (m_timer && m_timer->isActive())
 		m_timer->stop();
 	m_timer.reset(new QTimer(this));
+	m_timer->setTimerType(Qt::PreciseTimer);
 	connect(m_timer.data(), SIGNAL(timeout()), this, SLOT(grab()));
 }
 
@@ -133,11 +135,16 @@ void GrabberBase::grab()
 		}
 	}
 	_lastGrabResult = grabScreens();
-	++grabScreensCount;
+
 	if (_lastGrabResult == GrabResultOk) {
+		++grabScreensCount;
 		_context->grabResult->clear();
 
 		for (int i = 0; i < _context->grabWidgets->size(); ++i) {
+			if (!_context->grabWidgets->at(i)->isAreaEnabled()) {
+				_context->grabResult->append(qRgb(0,0,0));
+				continue;
+			}
 			QRect widgetRect = _context->grabWidgets->at(i)->frameGeometry();
 			getValidRect(widgetRect);
 
@@ -164,8 +171,40 @@ void GrabberBase::grab()
 			// Convert coordinates from "Main" desktop coord-system to capture-monitor coord-system
 			QRect preparedRect = clippedRect.translated(-monitorRect.x(), -monitorRect.y());
 
-			// Align width by 4 for accelerated calculations
-			preparedRect.setWidth(preparedRect.width() - (preparedRect.width() % 4));
+			// grabbed screen is rotated => rotate the widget
+			if (grabbedScreen->rotation != 0) {
+				if (grabbedScreen->rotation % 4 == 1) { // rotated 90
+					preparedRect.setCoords(
+						monitorRect.height() - preparedRect.bottom(),
+						preparedRect.left(),
+						monitorRect.height() - preparedRect.top(),
+						preparedRect.right()
+					);
+				} else if (grabbedScreen->rotation % 4 == 2) { // rotated 180
+					preparedRect.setCoords(
+						monitorRect.width() - preparedRect.right(),
+						monitorRect.height() - preparedRect.bottom(),
+						monitorRect.width() - preparedRect.left(),
+						monitorRect.height() - preparedRect.top()
+					);
+				} else if (grabbedScreen->rotation % 4 == 3) { // rotated 270
+					preparedRect.setCoords(
+						preparedRect.top(),
+						monitorRect.width() - preparedRect.right(),
+						preparedRect.bottom(),
+						monitorRect.width() - preparedRect.left()
+					);
+				}
+			}
+
+			// grabbed screen was scaled => scale the widget
+			if (grabbedScreen->scale != 1.0)
+				preparedRect.setCoords(
+					std::ceil(grabbedScreen->scale * preparedRect.left()),
+					std::ceil(grabbedScreen->scale * preparedRect.top()),
+					std::floor(grabbedScreen->scale * preparedRect.right()),
+					std::floor(grabbedScreen->scale * preparedRect.bottom())
+				);
 
 			if( !preparedRect.isValid() ){
 				qWarning() << Q_FUNC_INFO << " preparedRect is not valid:" << Debug::toString(preparedRect);
@@ -175,19 +214,13 @@ void GrabberBase::grab()
 				continue;
 			}
 
-			using namespace Grab;
 			const int bytesPerPixel = 4;
-			QRgb avgColor;
-			if (_context->grabWidgets->at(i)->isAreaEnabled()) {
-				Q_ASSERT(grabbedScreen->imgData);
-				Calculations::calculateAvgColor(
-					&avgColor, grabbedScreen->imgData, grabbedScreen->imgFormat,
-					grabbedScreen->screenInfo.rect.width() * bytesPerPixel,
-					preparedRect);
-				_context->grabResult->append(avgColor);
-			} else {
-				_context->grabResult->append(qRgb(0,0,0));
-			}
+			Q_ASSERT(grabbedScreen->imgData);
+			QRgb avgColor = Grab::Calculations::calculateAvgColor(
+				grabbedScreen->imgData, grabbedScreen->imgFormat,
+				grabbedScreen->bytesPerRow > 0 ? grabbedScreen->bytesPerRow : grabbedScreen->screenInfo.rect.width() * bytesPerPixel,
+				preparedRect);
+			_context->grabResult->append(avgColor);
 		}
 
 	}

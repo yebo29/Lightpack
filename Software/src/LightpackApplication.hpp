@@ -29,7 +29,6 @@
 #include "SettingsWindow.hpp"
 #include "LedDeviceManager.hpp"
 #include "qtsingleapplication.h"
-#include "SessionChangeDetector.hpp"
 
 #include <memory>
 
@@ -104,20 +103,20 @@ public:
 	QMutex m_mutex;
 
 private:
-	SettingsWindow *m_settingsWindow;
-	ApiServer *m_apiServer;
-	LedDeviceManager *m_ledDeviceManager;
-	QThread *m_ledDeviceManagerThread;
-	QThread *m_apiServerThread;
-	GrabManager *m_grabManager;
-	MoodLampManager *m_moodlampManager;
-#ifdef BASS_SOUND_SUPPORT
-	SoundManager *m_soundManager;
+	SettingsWindow *m_settingsWindow{nullptr};
+	ApiServer *m_apiServer{nullptr};
+	LedDeviceManager *m_ledDeviceManager{nullptr};
+	QThread *m_ledDeviceManagerThread{nullptr};
+	QThread *m_apiServerThread{nullptr};
+	GrabManager *m_grabManager{nullptr};
+	MoodLampManager *m_moodlampManager{nullptr};
+#ifdef SOUNDVIZ_SUPPORT
+	SoundManagerBase *m_soundManager{nullptr};
 #endif
 
-	PluginsManager *m_pluginManager;
-	LightpackPluginInterface *m_pluginInterface;
-	QWidget *consolePlugin;
+	PluginsManager *m_pluginManager{nullptr};
+	LightpackPluginInterface *m_pluginInterface{nullptr};
+	QWidget *consolePlugin{nullptr};
 
 	QString m_applicationDirPath;
 	bool m_isDebugLevelObtainedFromCmdArgs;
@@ -129,6 +128,11 @@ private:
 	typedef std::vector<QSharedPointer<QAbstractNativeEventFilter> > EventFilters;
 	EventFilters m_EventFilters;
 
+	bool m_isLightsTurnedOffBySessionChange;
 	bool m_isSessionLocked;
-	bool m_isLightsWereOn;
+	bool m_isDisplayOff;
+	bool m_isSuspending;
+	bool m_isLightsWereOnBeforeLock;
+	bool m_isLightsWereOnBeforeDisplaySleep;
+	bool m_isLightsWereOnBeforeSuspend;
 };

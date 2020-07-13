@@ -42,6 +42,8 @@ namespace PrismatikMath
 	int min(const QRgb);
 	QRgb withValueHSV(const QRgb, int);
 	QRgb withChromaHSV(const QRgb, int);
+	void applyColorTemperature(QList<QRgb>&, const quint16, double gamma);
+	StructRgb whitePoint(const quint16 colorTemperature);
 	StructRgb avgColor(const QList<StructRgb> &);
 	StructXyz toXyz(const StructRgb &);
 	StructXyz toXyz(const StructLab &);
@@ -49,6 +51,9 @@ namespace PrismatikMath
 	StructLab toLab(const StructXyz &);
 	StructRgb toRgb(const StructXyz &);
 	StructRgb toRgb(const StructLab &);
+	quint8 getBrightness(const QRgb);
+	double theoreticalMaxFrameRate(const double ledCount, const double baudRate);
+	double theoreticalMinBaudRate(const double ledCount, const double frameRate);
 
 	// Convert ASCII char '5' to 5
 	inline char getDigit(const char d)
@@ -57,11 +62,6 @@ namespace PrismatikMath
 			return (d - '0');
 		else
 			return -1;
-	}
-
-	inline int rand(int val)
-	{
-		return qrand() % val;
 	}
 
 	inline double round(double number)

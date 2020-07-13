@@ -1,16 +1,13 @@
-include(build-vars.prf.default)
-exists(build-vars.prf):include(build-vars.prf)
+exists(build-vars.prf) {
+	include(build-vars.prf)
+} else {
+	include(build-vars.prf.default)
+}
 
 #------------------------------------------------------------------------------
 # Parsing configuration
 #------------------------------------------------------------------------------
 win32: {
-    # DirectX SDK directory
-    _DIRECTX_SDK_DIR = $$(DIRECTX_SDK_DIR)
-    !isEmpty(_DIRECTX_SDK_DIR) {
-        DIRECTX_SDK_DIR = $$_DIRECTX_SDK_DIR
-    }
-
     # Target architecture
     QMAKE_TARGET.arch = $$TARGET_ARCH
     _TARGET_ARCH = $$(TARGET_ARCH)
